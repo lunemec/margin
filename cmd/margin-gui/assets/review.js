@@ -41,7 +41,7 @@ export async function openReview(dir, arg, fresh = false, file = "") {
     resetTests();
     endTry();
     state.view = null;
-    Object.assign(state, { station: 0, note: -1, step: 0, sel: null, compose: null, block: null, parts: {}, expand: {}, whole: {}, around: {}, known: null,
+    Object.assign(state, { station: 0, note: -1, step: 0, sel: null, compose: null, editing: null, block: null, parts: {}, expand: {}, whole: {}, around: {}, known: null,
       query: "", spot: -1, spotLines: null, filter: 0 });
     state.fresh = new Set();
   }
@@ -875,18 +875,91 @@ function commentCard(c, opts = {}) {
     actions.append(ans);
     card.append(actions);
   }
-  if (c.draft) {
+  if (c.draft && state.editing?.id === c.id) {
+    card.querySelector(":scope > div:last-of-type").replaceWith(editBox(c));
+    card.classList.add("editing");
+  } else if (c.draft) {
+    const edit = el(`<button class="na" title="Reword this draft before you send it (e)">Edit</button>`);
+    edit.onclick = (e) => {
+      e.stopPropagation();
+      startEdit(c);
+    };
     const del = el(`<button class="na" title="Delete this draft (x in the recap)">Delete</button>`);
     del.onclick = (e) => {
       e.stopPropagation();
       act("DeleteComment", c.id);
     };
     const actions = el(`<div class="note-actions"></div>`);
-    actions.append(del);
+    actions.append(edit, del);
     card.append(actions);
   }
   if (opts.jump) card.onclick = opts.jump;
   return card;
+}
+
+// startEdit opens a draft comment's words in its card; one draft is edited at a time.
+function startEdit(c) {
+  if (state.editing && state.editing.id !== c.id && state.editing.text !== state.editing.was)
+    return toast("Finish or cancel the comment you are editing first.");
+  state.editing = { id: c.id, text: c.body ?? c.text, was: c.body ?? c.text };
+  renderKeepScroll();
+  const ta = document.querySelector(".comment.editing textarea");
+  ta?.focus();
+  ta?.setSelectionRange(ta.value.length, ta.value.length);
+}
+
+function editBox(c) {
+  const ed = state.editing;
+  const box = el(`<div class="composer edit-box">
+    <textarea rows="3"></textarea>
+    <div class="cp-foot"><span class="muted small">Still a draft until you send the comments. Ctrl+Enter saves, Esc cancels.</span>
+      <span class="spacer"></span><button class="small cp-cancel">Cancel</button><button class="primary small cp-save">Save draft</button></div></div>`);
+  box.onclick = (e) => e.stopPropagation();
+  const ta = box.querySelector("textarea");
+  ta.value = ed.text;
+  ta.oninput = () => (ed.text = ta.value);
+  const done = () => {
+    state.editing = null;
+    renderKeepScroll();
+  };
+  const save = async () => {
+    if (await act("EditComment", c.id, ta.value)) {
+      toast(`${c.id} reworded; S sends every draft to the agent`);
+      done();
+    }
+  };
+  ta.onkeydown = (e) => {
+    e.stopPropagation();
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      save();
+    }
+    if (e.key === "Escape") {
+      e.preventDefault();
+      done();
+    }
+  };
+  box.querySelector(".cp-save").onclick = save;
+  box.querySelector(".cp-cancel").onclick = done;
+  return box;
+}
+
+// editKey is e on a draft comment: the one picked in the recap, or the last draft on the selected
+// line. It reports false when there is none, so e keeps its other job.
+function editKey(s, sel) {
+  const k = document.querySelector("#station .kcur[data-comment]");
+  let c = k ? reader().comments.find((x) => x.id === k.dataset.comment) : null;
+  if (c && !c.draft) {
+    toast(`${c.id} was sent already; write a new comment instead`);
+    return true;
+  }
+  if (!c && sel) {
+    const p = s.parts[sel.part];
+    c = reader().comments.filter((x) => x.draft && x.station === s.id && x.file === p?.file && x.line === sel.line + 1 && (x.side === "base") === !!p?.base).pop();
+  }
+  if (!c) return false;
+  startEdit(c);
+  return true;
 }
 
 function questionCard(q, opts = {}) {
@@ -2476,10 +2549,10 @@ async function openExport() {
 }
 
 const helpKeys = [
-  ["Walk", [["space", "next step; at the end of a stop, the next stop"], ["b", "previous step"], ["w", "guided walk or whole stop"], ["e", "more of the stop card or overview"], ["y n ?", "answer the orient question (overview)"]]],
+  ["Walk", [["space", "next step; at the end of a stop, the next stop"], ["b", "previous step"], ["w", "guided walk or whole stop"], ["e", "more of the stop card or overview; on a draft comment, edit it"], ["y n ?", "answer the orient question (overview)"]]],
   ["Move", [["} {", "next / previous stop"], ["] [", "next / previous note"], ["j k", "move the selected line"], ["J K shift+click", "select a block of lines"], ["ctrl+d ctrl+u", "half a page down / up"], ["g G", "top / bottom"], ["h l 0", "scroll code sideways / back"], ["N", "next new note (or previous match)"]]],
   ["Judge", [["1 2 3", "verdict: looks good / needs changes / not sure"], ["space", "mark the selected note read (whole stop)"], ["?", "agree with the selected problem"], ["P", "ask the agent to fix the problems you agreed with and the stops that need changes"], ["x", "dismiss the selected note"], ["enter", "tick the selected call"], ["v", "reveal notes in blind mode"]]],
-  ["Talk", [["c", "comment on the selected line (draft)"], ["S", "send all drafts to the agent"], ["A", "the agent's answers to your comments: read, edit, reply"], ["a", "ask the agent about the selected line"], ["y Y", "copy the note / the whole stop"], ["`", "focus the agent terminal; ctrl+esc leaves it"]]],
+  ["Talk", [["c", "comment on the selected line (draft); Edit on its card rewords it"], ["S", "send all drafts to the agent"], ["A", "the agent's answers to your comments: read, edit, reply"], ["a", "ask the agent about the selected line"], ["y Y", "copy the note / the whole stop"], ["`", "focus the agent terminal; ctrl+esc leaves it"]]],
   ["See", [["/", "search; n N next / previous"], ["F", "filter notes"], ["n", "show or hide notes"], ["d", "removed lines"], ["s", "side by side"], ["z", "fold unchanged code"], ["+ -", "more / less context on the selected part"], ["f", "whole file of the selected part"], ["t", "tests that run the selected line"], ["T", "run them (the stop's tests when no line is selected)"], ["i", "try a change to the selected line or block: edit or delete it, its tests run against that, then it is put back"], ["o", "show or hide the test output"], ["u U", "next / previous untested change"], ["esc", "end search or spotlight, close an overlay"], ["r", "reload"], ["\\", "show or hide the sidebar"], ["ctrl+k", "go to a repository, worktree, branch or review"], ["ctrl+,", "settings"]]],
 ];
 
@@ -2513,6 +2586,7 @@ export function reviewKey(e) {
   const keys = {
     w: toggleGuide,
     e: () => {
+      if (editKey(s, sel)) return;
       state.more = !state.more;
       renderKeepScroll();
     },
@@ -2571,8 +2645,9 @@ export function reviewKey(e) {
         markBlock();
         return renderStatus();
       }
-      if (state.compose || state.trying) {
+      if (state.compose || state.trying || state.editing) {
         state.compose = null;
+        state.editing = null;
         endTry();
         renderKeepScroll();
       }

@@ -17,6 +17,8 @@ export const state = {
   agentLive: false,
   sel: null,
   compose: null,
+  // editing is the draft comment being reworded in its card: { id, text }.
+  editing: null,
   // The guided walk: the step of the current stop, and whether the reader was told to give a verdict.
   step: 0,
   nudged: false,

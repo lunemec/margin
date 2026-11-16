@@ -128,3 +128,24 @@ func (s *State) Question(id string) (Question, bool) {
 	}
 	return Question{}, false
 }
+
+// EditDraft rewords the draft comment id, keeping its kind and the question it answers. A sent
+// comment is the agent's already, so it stays as it was.
+func (s *State) EditDraft(id, body string) error {
+	body = strings.TrimSpace(body)
+	if body == "" {
+		return errors.New("the comment is empty; x deletes a draft")
+	}
+	for i, q := range s.Questions {
+		if q.ID != id || !q.IsComment() {
+			continue
+		}
+		if !q.Draft {
+			return fmt.Errorf("%s was sent already; write a new comment instead", id)
+		}
+		prefix, _ := CommentBody(q.Text)
+		s.Questions[i].Text = prefix + body
+		return nil
+	}
+	return fmt.Errorf("no comment %s", id)
+}

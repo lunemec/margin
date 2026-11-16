@@ -46,6 +46,8 @@ type CommentView struct {
 	Label    string `json:"label"`
 	Blocking bool   `json:"blocking"`
 	Resolved bool   `json:"resolved"`
+	// Body is what the reader wrote, without the kind or the question it answers; an edit changes it.
+	Body string `json:"body"`
 }
 
 type OutcomeView struct {
@@ -84,7 +86,8 @@ func readerOf(d *doc.Doc, st *state.State) ReaderView {
 			continue
 		}
 		name, blocking := state.CommentLabel(q.Text)
-		rv.Comments = append(rv.Comments, CommentView{Question: q, Label: name, Blocking: blocking, Resolved: resolved[q.ID]})
+		_, body := state.CommentBody(q.Text)
+		rv.Comments = append(rv.Comments, CommentView{Question: q, Label: name, Blocking: blocking, Resolved: resolved[q.ID], Body: body})
 		if q.Draft {
 			rv.Drafts++
 		}
@@ -230,6 +233,12 @@ func (r *Reviews) DeleteComment(id string) (*View, error) {
 		st.Questions = slices.Delete(st.Questions, i, i+1)
 		return nil
 	})
+}
+
+// EditComment rewords a draft; a sent comment stays as the agent got it.
+func (r *Reviews) EditComment(id, body string) (*View, error) {
+	body = text.Sanitize(strings.TrimSpace(body))
+	return r.change(func(_ *doc.Doc, st *state.State) error { return st.EditDraft(id, body) })
 }
 
 // SendComments types every draft into the agent's terminal as one message and marks them sent.

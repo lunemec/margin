@@ -500,7 +500,8 @@ its file:line, in a `.comments.md` note beside the review file, and closes it wi
 your comment. `A` opens the note in an overlay: `]` and `[` go from answer to answer, `r` replies
 under the one you are on (the reply goes into the note and the agent is asked to answer it there),
 and `e` opens the note in `$EDITOR` to edit it. The recap lists your comments with where each
-stands, and `x` on a draft there deletes it.
+stands, and `x` on a draft there deletes it. `e` on a draft (picked in the recap, or on the cursor
+line) opens its words in the prompt to reword it before you send it; sent comments stay as the agent got them.
 
 ![A draft comment in the notes column and the drafts counter in the footer](screenshots/comment.svg)
 
@@ -775,6 +776,7 @@ the viewer. Coverage is stored beside the review as `<name>.review.coverage.json
 | `space` in whole stops | mark the note reviewed, or a call made, and move on (again to undo) |
 | `?` | flag the note to come back to (again to undo) |
 | `x` | dismiss the note as not useful; in the recap, delete a draft comment |
+| `e` | on a draft comment (recap or cursor line): reword it; elsewhere, more of the stop card |
 | `y` | copy the selected note to the clipboard, with its file:line |
 | `Y` | copy the whole stop: its rationale, part intros and every note, ready to paste into a PR |
 | `v` | blind mode: show the notes on a high-risk stop you read first |

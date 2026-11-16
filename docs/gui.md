@@ -102,7 +102,7 @@ with pictures. In short:
   verdict (`1` good, `2` needs changes, `3` not sure). `w` shows whole stops instead.
 - **Your side.** Comment on a line with `c` (pick a kind: issue, suggestion, question, nitpick,
   praise, thought; `!` makes it blocking). Comments are drafts until `S` sends them all to the
-  agent. Ask the agent about a line with `a`. Mark notes read, agree with a problem (`?`), dismiss
+  agent; until then *Edit* on a draft (or `e`) rewords it. Ask the agent about a line with `a`. Mark notes read, agree with a problem (`?`), dismiss
   one (`x`), tick the calls only you can make, and answer the agent's questions. Agreeing with a
   problem or giving a stop "needs changes" only marks it; **Ask to fix** (`P`) in the top bar or
   the recap hands them to the agent (a stop with your comments on it as the brief), and each comes

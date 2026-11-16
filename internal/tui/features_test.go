@@ -478,3 +478,47 @@ func TestFixNeedsChangesStop(t *testing.T) {
 		t.Error("a sent stop is not sent again")
 	}
 }
+
+func TestEditDraftComment(t *testing.T) {
+	m := newModel(t)
+	mustGoto(t, m, "reserve:1")
+	press(m, "c", "i", "log the quantity", "enter")
+	press(m, "e")
+	if m.editing != "c1" || m.input.Value() != "log the quantity" {
+		t.Fatalf("e should open the draft's words, got %q %q", m.editing, m.input.Value())
+	}
+	m.input.SetValue("")
+	press(m, "log the rejected quantity too", "enter")
+	if got := m.state.Questions[0].Text; got != "issue (blocking): log the rejected quantity too" {
+		t.Fatalf("edited text = %q", got)
+	}
+	st, err := state.Load(m.state.Path())
+	if err != nil || st.Questions[0].Text != m.state.Questions[0].Text {
+		t.Fatalf("edit not saved: %v %+v", err, st.Questions)
+	}
+
+	press(m, "e")
+	m.input.SetValue("")
+	press(m, "thrown away", "esc")
+	if got := m.state.Questions[0].Text; got != "issue (blocking): log the rejected quantity too" {
+		t.Fatalf("esc should keep the draft, got %q", got)
+	}
+
+	mustGoto(t, m, "recap")
+	for i, r := range m.rows {
+		if r.kind == rowLink && r.comment == 0 {
+			m.cur = i
+		}
+	}
+	press(m, "e")
+	if m.editing != "c1" {
+		t.Fatal("e on a draft picked in the recap should open it")
+	}
+	press(m, "esc")
+
+	m.state.Questions[0].Draft = false
+	press(m, "e")
+	if m.editing != "" || !strings.Contains(m.status, "sent already") {
+		t.Fatalf("a sent comment must not open for editing: %q %q", m.editing, m.status)
+	}
+}

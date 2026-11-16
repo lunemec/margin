@@ -60,3 +60,27 @@ func CommentLabel(text string) (name string, blocking bool) {
 	}
 	return "", false
 }
+
+// answerLead starts a comment that answers one of the agent's question notes; the note it answers
+// follows, up to "): ".
+const answerLead = "answer to your question (note "
+
+// CommentBody splits a comment into the prefix margin put in front of it (the question note it
+// answers, the comment kind) and the words the reader wrote, so an edit changes only the words.
+func CommentBody(text string) (prefix, body string) {
+	rest := text
+	if strings.HasPrefix(rest, answerLead) {
+		if i := strings.Index(rest[len(answerLead):], "): "); i >= 0 {
+			rest = rest[len(answerLead)+i+len("): "):]
+		}
+	}
+	if m := labelled.FindStringSubmatchIndex(rest); m != nil {
+		for _, l := range Labels {
+			if l.Name == rest[m[2]:m[3]] {
+				rest = rest[m[1]:]
+				break
+			}
+		}
+	}
+	return text[:len(text)-len(rest)], rest
+}

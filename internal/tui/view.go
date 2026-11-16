@@ -564,6 +564,7 @@ var helpLines = []string{
 	" enter      open a link, unfold, peek, read a whole note, answer a ? note",
 	" space      whole stop: mark read ?     flag the note",
 	" x          dismiss the note; in the recap, delete a draft comment",
+	" e          on a draft comment (recap or cursor line): reword it before S sends it",
 	" a          ask the agent now    c      comment: pick a kind, kept as a draft",
 	" S          send the drafts      v      show notes hidden by blind mode",
 	" P          ask the agent to fix the problems you agreed with (?) and stops marked 2",

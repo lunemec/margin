@@ -11,6 +11,7 @@ import (
 	"github.com/redrick/margin/internal/doc"
 	"github.com/redrick/margin/internal/review"
 	"github.com/redrick/margin/internal/state"
+	"github.com/redrick/margin/internal/text"
 	"github.com/redrick/margin/internal/tmuxx"
 )
 
@@ -330,4 +331,63 @@ func (m *Model) commentsAt(p *doc.Part, line int) []state.Question {
 		}
 	}
 	return out
+}
+
+// editTarget is the comment e rewords: the one picked in the recap, or the last draft on the
+// cursor line. Without one, e keeps its other job (more of the stop card).
+func (m *Model) editTarget() (state.Question, bool) {
+	if m.state == nil || m.cur < 0 || m.cur >= len(m.rows) {
+		return state.Question{}, false
+	}
+	if r := m.rows[m.cur]; r.kind == rowLink && r.comment >= 0 && r.comment < len(m.state.Questions) {
+		return m.state.Questions[r.comment], true
+	}
+	r, ok := m.cursorRow()
+	if !ok {
+		return state.Question{}, false
+	}
+	qs := m.commentsAt(m.doc.Stations[m.station].Parts[r.part], r.line)
+	for i := len(qs) - 1; i >= 0; i-- {
+		if qs[i].Draft {
+			return qs[i], true
+		}
+	}
+	return state.Question{}, false
+}
+
+// editComment opens the prompt on a draft comment's words, to reword it before S sends it. It
+// reports false when there is no comment under the cursor.
+func (m *Model) editComment() (tea.Cmd, bool) {
+	q, ok := m.editTarget()
+	if !ok {
+		return nil, false
+	}
+	if !q.Draft {
+		m.setStatus(false, "%s was sent already; write a new comment instead", q.ID)
+		return nil, true
+	}
+	prefix, body := state.CommentBody(q.Text)
+	m.asking, m.editing = true, q.ID
+	m.input.Prompt = fmt.Sprintf(" edit %s › ", q.ID)
+	if prefix != "" {
+		m.input.Prompt = fmt.Sprintf(" edit %s %s› ", q.ID, doc.Short(prefix, 40))
+	}
+	m.input.Placeholder = "the comment's new words; enter saves the draft, esc keeps it as it was"
+	m.input.SetValue(text.Line(body))
+	m.input.CursorEnd()
+	return m.input.Focus(), true
+}
+
+// saveEdit stores the reworded draft id.
+func (m *Model) saveEdit(id, body string) {
+	if err := m.state.EditDraft(id, body); err != nil {
+		m.setStatus(false, "%v", err)
+		return
+	}
+	if err := m.state.Save(); err != nil {
+		m.setStatus(true, "saving comment: %v", err)
+		return
+	}
+	m.rebuildKeep()
+	m.setStatus(false, "%s reworded; S sends every draft to the agent", id)
 }

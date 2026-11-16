@@ -84,7 +84,9 @@ type Model struct {
 	listCur    int
 	asking     bool
 	commenting bool
-	input      textinput.Model
+	// editing is the id of the draft comment being reworded in the prompt.
+	editing string
+	input   textinput.Model
 
 	clip      func(string) error
 	searching bool
@@ -464,6 +466,9 @@ func (m *Model) key(msg tea.KeyMsg) tea.Cmd {
 			m.toggleGuide()
 			return nil
 		case k == "e":
+			if cmd, ok := m.editComment(); ok {
+				return cmd
+			}
 			m.more = !m.more
 			m.rebuildKeep()
 			return nil
@@ -643,7 +648,7 @@ func (m *Model) updateAsk(msg tea.KeyMsg) tea.Cmd {
 	switch msg.Type {
 	case tea.KeyEsc:
 		m.asking, m.commenting, m.designing, m.label, m.blocking = false, false, false, "", false
-		m.answerOn, m.cmdAsk, m.afterCmd = false, false, nil
+		m.answerOn, m.cmdAsk, m.afterCmd, m.editing = false, false, nil, ""
 		if m.ans != nil {
 			m.ans.replyTo = ""
 		}
@@ -674,10 +679,13 @@ func (m *Model) updateAsk(msg tea.KeyMsg) tea.Cmd {
 			return m.saveCommand(raw)
 		}
 		q := text.Line(m.input.Value())
-		commenting, designing := m.commenting, m.designing
-		m.asking, m.commenting, m.designing = false, false, false
+		commenting, designing, editing := m.commenting, m.designing, m.editing
+		m.asking, m.commenting, m.designing, m.editing = false, false, false, ""
 		m.input.Blur()
 		switch {
+		case editing != "":
+			m.saveEdit(editing, q)
+			return nil
 		case q == "":
 			return nil
 		case designing:
