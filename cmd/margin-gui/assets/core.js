@@ -40,7 +40,32 @@ export const state = {
 };
 
 // hooks are filled in by app.js, so the review can reach the agent terminal.
-export const hooks = { fitTerminal() {}, focusTerminal() {}, showReviewer() {} };
+export const hooks = { fitTerminal() {}, focusTerminal() {}, showReviewer() {}, themeChanged() {} };
+
+// The theme setting: "light", "dark", or "" to follow the system.
+let themeMode = "";
+
+export async function applyTheme(mode = themeMode) {
+  let dark = mode === "dark";
+  if (mode === "") {
+    try {
+      dark = await api("Settings.SystemDark");
+    } catch {
+      dark = matchMedia("(prefers-color-scheme: dark)").matches;
+    }
+  }
+  const name = dark ? "dark" : "light";
+  if (document.documentElement.dataset.theme === name) return;
+  document.documentElement.dataset.theme = name;
+  hooks.themeChanged(dark);
+}
+
+export function setThemeMode(mode) {
+  themeMode = mode ?? "";
+  return applyTheme();
+}
+
+export const followsSystem = () => themeMode === "";
 
 export function esc(s) {
   return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
@@ -111,6 +136,7 @@ export function closeModal() {
   const m = document.querySelector(".modal-back");
   if (!m) return false;
   m.remove();
+  m.onclosed?.();
   return true;
 }
 

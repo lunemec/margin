@@ -72,6 +72,7 @@ margin-tui and [margin-gui](gui.md) share one settings file, `~/.config/margin/c
 | --- | --- |
 | `reviews` | Where review files go. `repo` (the default) is `.margin/reviews/` in the repository, which git ignores and every worktree shares. `state` is `~/.local/state/margin`. Anything else is a directory, which may use `{project}`, `{topic}` (the branch) and `{repo}`. With `{project}` or `{topic}` it is a notes folder: files are named `margin-…` and start with frontmatter, for example `~/notes/{project}/topics/{topic}`. |
 | `agent` | The agent command, `claude` by default. The instructions are its last argument, or replace `{prompt}`: `codex`, `gemini -i {prompt}`, `opencode --prompt {prompt}`, `claude --model opus`. |
+| `theme` | margin-gui's look: `light` or `dark`. Unset (the default) follows the system. |
 | `agent_note` | A line added to the agent's instructions, with `{project}`, `{topic}` and `{dir}` filled in, for example "File the review in the index of {project}." |
 
 `$MARGIN_DIR` and `$MARGIN_AGENT` override the file for one run.

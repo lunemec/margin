@@ -1,4 +1,4 @@
-import { api, $, $$, state, hooks, esc, el, toast, errText, tail, plural, fuzzy, openModal, closeModal } from "./core.js";
+import { api, $, $$, state, hooks, esc, el, toast, errText, tail, plural, fuzzy, openModal, closeModal, applyTheme, setThemeMode } from "./core.js";
 import { openReview, openReviewFile } from "./review.js";
 import { openAnswers } from "./answers.js";
 
@@ -528,6 +528,12 @@ export async function openSettings() {
   const agentKnown = v.agents.some((a) => a.command === (f.agent || "claude"));
   const body = el(`<div class="settings">
     ${v.err ? `<p class="error">${esc(v.err)}</p>` : ""}
+    <section><h4>Appearance</h4>
+      <div class="opts-row">${[["", "System"], ["light", "Light"], ["dark", "Dark"]]
+        .map(([val, name]) => `<label class="opt"><input type="radio" name="theme" value="${val}"${(f.theme ?? "") === val ? " checked" : ""}><span>${name}</span></label>`)
+        .join("")}</div>
+      <p class="muted small">System follows the desktop's light or dark setting.</p>
+    </section>
     <section><h4>Where reviews are kept</h4>
       <label class="opt"><input type="radio" name="where" value="repo"${where === "repo" ? " checked" : ""}><span><b>In the repository</b> · <code>.margin/reviews/</code>, which git ignores. Every worktree of the repository shares it.</span></label>
       <label class="opt"><input type="radio" name="where" value="state"${where === "state" ? " checked" : ""}><span><b>A private folder</b> · <code>~/.local/state/margin</code>, outside every repository.</span></label>
@@ -600,6 +606,9 @@ export async function openSettings() {
     skills.append(r);
   }
   body.querySelectorAll('input[name="where"]').forEach((r) => (r.onchange = () => body.querySelector(".dir-row").classList.toggle("hidden", r.value !== "dir" || !r.checked)));
+  body.querySelectorAll('input[name="theme"]').forEach((r) => (r.onchange = () => {
+    applyTheme(r.value);
+  }));
   body.querySelector('[data-act="cancel"]').onclick = closeModal;
   body.querySelector('[data-act="save"]').onclick = async () => {
     const w = body.querySelector('input[name="where"]:checked').value;
@@ -609,9 +618,11 @@ export async function openSettings() {
       agent: a ? (a === "claude" ? "" : a) : body.querySelector("#set-agent").value.trim(),
       agent_note: body.querySelector("#set-note").value.trim(),
       tests,
+      theme: body.querySelector('input[name="theme"]:checked').value,
     };
     try {
       await api("Settings.Save", cfg);
+      await setThemeMode(cfg.theme);
       closeModal();
       toast("Settings saved. New reviews and agents use them; open reviews stay where they are.");
       if (state.worktree) loadTargets();
@@ -620,6 +631,7 @@ export async function openSettings() {
     }
   };
   const m = openModal("Settings", body, "narrow");
+  m.onclosed = () => applyTheme();
   m.onkey = (e) => (e.key === "Escape" ? (closeModal(), true) : true);
 }
 

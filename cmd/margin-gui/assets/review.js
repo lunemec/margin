@@ -427,7 +427,7 @@ function renderText(spans, layers) {
   let out = "";
   const open = layers.map(() => false);
   for (const sp of spans ?? []) {
-    const st = [sp.c ? `color:${sp.c}` : "", sp.b ? "font-weight:600" : "", sp.i ? "font-style:italic" : ""].filter(Boolean).join(";");
+    const st = [sp.c ? `--d:${sp.c}` : "", sp.l ? `--l:${sp.l}` : "", sp.b ? "font-weight:600" : "", sp.i ? "font-style:italic" : ""].filter(Boolean).join(";");
     let piece = layers.map((l, li) => (open[li] ? l.open : "")).join("");
     const chars = [...sp.t];
     for (let i = 0; i < chars.length; i++) {
@@ -453,7 +453,7 @@ function renderText(spans, layers) {
         if (l.ranges.some(([, b]) => b === pos)) open[li] = false;
       }
     });
-    out += st ? `<span style="${st}">${piece}</span>` : piece;
+    out += st ? `<span${sp.c || sp.l ? ' class="sx"' : ""} style="${st}">${piece}</span>` : piece;
   }
   return out;
 }

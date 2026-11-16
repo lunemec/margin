@@ -891,12 +891,18 @@ func (m *Model) wrapRows(st *doc.Station) {
 	}
 }
 
-var verdicts = []struct {
+type verdictChoice struct {
 	id, key, label, fg string
-}{
-	{verdict.Good, "1", "looks good", colAdded},
-	{verdict.Changes, "2", "needs changes", colProblem},
-	{verdict.Unsure, "3", "not sure yet", colChanged},
+}
+
+var verdicts = makeVerdicts()
+
+func makeVerdicts() []verdictChoice {
+	return []verdictChoice{
+		{verdict.Good, "1", "looks good", colAdded},
+		{verdict.Changes, "2", "needs changes", colProblem},
+		{verdict.Unsure, "3", "not sure yet", colChanged},
+	}
 }
 
 func noteAt(st *doc.Station, n *doc.Note) string {

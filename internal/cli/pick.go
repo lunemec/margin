@@ -39,6 +39,7 @@ func cmdPick(args []string) error {
 		}
 	}
 	p := tui.NewPicker(wd)
+	tui.UseTerminalTheme()
 	if _, err := tea.NewProgram(p, tea.WithAltScreen(), tea.WithMouseCellMotion()).Run(); err != nil {
 		return err
 	}

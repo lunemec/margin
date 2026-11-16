@@ -1,9 +1,18 @@
 import { Events } from "/wails/runtime.js";
-import { api, $, state, hooks, toast, errText, tail, closeModal } from "./core.js";
+import { api, $, state, hooks, toast, errText, tail, closeModal, applyTheme, setThemeMode, followsSystem } from "./core.js";
 import { openReview, openReviewFile, reviewKey, renderReview, sendComments, sendFixes } from "./review.js";
 import { loadWorkspace, loadRecent, renderSide, addFolder, selectWorktree, homeKey, backToReview, syncSideButtons, openSwitcher, switcherOpen, openSettings, navState } from "./nav.js";
 
 // Agent terminal
+
+const termThemes = {
+  dark: { background: "#0a0d12", foreground: "#d7dde4", cursor: "#7aa2f7", selectionBackground: "#264f78" },
+  light: {
+    background: "#ffffff", foreground: "#1f2328", cursor: "#0969da", cursorAccent: "#ffffff", selectionBackground: "#b6d7ff",
+    black: "#24292f", red: "#cf222e", green: "#116329", yellow: "#4d2d00", blue: "#0969da", magenta: "#8250df", cyan: "#1b7c83", white: "#6e7781",
+    brightBlack: "#57606a", brightRed: "#a40e26", brightGreen: "#1a7f37", brightYellow: "#633c01", brightBlue: "#218bff", brightMagenta: "#a475f9", brightCyan: "#3192aa", brightWhite: "#8c959f",
+  },
+};
 
 const term = new Terminal({
   fontFamily: getComputedStyle(document.body).getPropertyValue("--mono"),
@@ -11,7 +20,7 @@ const term = new Terminal({
   cursorBlink: true,
   allowProposedApi: true,
   scrollback: 5000,
-  theme: { background: "#0a0d12", foreground: "#d7dde4", cursor: "#7aa2f7", selectionBackground: "#264f78" },
+  theme: termThemes.dark,
 });
 const fit = new FitAddon.FitAddon();
 term.loadAddon(fit);
@@ -229,7 +238,15 @@ $("#refresh").onclick = () => {
   if (state.opened && confirmFresh()) openReview(state.opened.repo, state.opened.arg, true);
 };
 window.addEventListener("resize", fitTerminal);
-Object.assign(hooks, { fitTerminal, focusTerminal: () => term.focus(), attachAgent, showReviewer, reviewOpened, pickReviewFile });
+const themeChanged = (dark) => (term.options.theme = termThemes[dark ? "dark" : "light"]);
+Object.assign(hooks, { fitTerminal, focusTerminal: () => term.focus(), attachAgent, showReviewer, reviewOpened, pickReviewFile, themeChanged });
+
+api("Settings.Theme").then(
+  (t) => setThemeMode(t.mode),
+  () => applyTheme(),
+);
+Events.On("theme:system", () => followsSystem() && applyTheme());
+window.addEventListener("focus", () => followsSystem() && applyTheme());
 
 let freshArmed = 0;
 function confirmFresh() {

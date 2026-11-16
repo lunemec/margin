@@ -24,7 +24,7 @@ type editState struct {
 	hoff int
 }
 
-const (
+var (
 	tintEditSel = "#264f78"
 	colEditCur  = "#e3b341"
 	colInsCur   = "#39c5cf"

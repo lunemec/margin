@@ -12,9 +12,13 @@ import (
 
 const TabWidth = 4
 
+// Light draws code with the light theme's syntax colours.
+var Light bool
+
 type Span struct {
 	Text   string
 	Color  string
+	Light  string
 	Bold   bool
 	Italic bool
 	Strike bool
@@ -32,7 +36,7 @@ func Highlight(filename string, lines []string) [][]Span {
 	if lexer == nil {
 		lexer = lexers.Fallback
 	}
-	style := styles.Get("github-dark")
+	style, light := styles.Get("github-dark"), styles.Get("github")
 	it, err := chroma.Coalesce(lexer).Tokenise(nil, content)
 	if err != nil {
 		for i, l := range lines {
@@ -46,6 +50,13 @@ func Highlight(filename string, lines []string) [][]Span {
 		sp := Span{Bold: e.Bold == chroma.Yes, Italic: e.Italic == chroma.Yes}
 		if e.Colour.IsSet() {
 			sp.Color = e.Colour.String()
+		}
+		if l := light.Get(tok.Type); l.Background.IsSet() && l.Background != light.Get(chroma.Background).Background {
+			sp.Light = l.Background.String()
+		} else if l.Colour.IsSet() {
+			sp.Light = l.Colour.String()
+		} else if sp.Color != "" {
+			sp.Light = "#1f2328"
 		}
 		for i, piece := range strings.Split(tok.Value, "\n") {
 			if i > 0 {
@@ -107,7 +118,11 @@ func (p *Painter) CodeHL(spans []Span, width, offset int, bg string, hlStart, hl
 		segBg := bg
 		flush := func() {
 			if seg.Len() > 0 {
-				b.WriteString(p.style(styleKey{fg: sp.Color, bg: segBg, bold: sp.Bold, italic: sp.Italic, strike: sp.Strike}).Render(seg.String()))
+				fg := sp.Color
+				if Light && sp.Light != "" {
+					fg = sp.Light
+				}
+				b.WriteString(p.style(styleKey{fg: fg, bg: segBg, bold: sp.Bold, italic: sp.Italic, strike: sp.Strike}).Render(seg.String()))
 				seg.Reset()
 			}
 		}

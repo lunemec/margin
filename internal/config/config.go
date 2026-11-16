@@ -36,6 +36,8 @@ type Config struct {
 	// Tests are the commands that run a repository's tests from the viewer, first match wins.
 	// margin runs nothing a repository asks for: only these, which the user set up.
 	Tests []TestCommand `yaml:"tests,omitempty" json:"tests"`
+	// Theme is margin-gui's look: "light", "dark", or empty to follow the system.
+	Theme string `yaml:"theme,omitempty" json:"theme"`
 }
 
 // TestCommand runs tests of the repositories Repo matches. Repo is a folder (with ~), a glob, or a
@@ -180,6 +182,9 @@ func (c Config) Check() error {
 	r := strings.TrimSpace(c.Reviews)
 	if r != "" && r != InRepo && r != InState && !filepath.IsAbs(Expand(r)) {
 		return fmt.Errorf("reviews must be %q, %q or an absolute directory, not %q", InRepo, InState, r)
+	}
+	if t := strings.TrimSpace(c.Theme); t != "" && t != "light" && t != "dark" {
+		return fmt.Errorf("theme must be light, dark or empty for the system's, not %q", t)
 	}
 	if len(strings.Fields(c.Agent)) == 0 && strings.TrimSpace(c.Agent) != "" {
 		return errors.New("agent is blank")

@@ -5,11 +5,12 @@
 # cmd/margin-gui/shoot_test.go), with its own settings, so nothing opens and nothing of yours is read.
 set -eu
 cd "$(dirname "$0")/../.."
-out=docs/screenshots/gui
+out=${MARGIN_SHOOT_OUT:-docs/screenshots/gui}
 work=$(mktemp -d)
 port=47123
 trap 'kill "$server" 2>/dev/null || true; rm -rf "$work"' EXIT
-mkdir -p "$out" "$work/home"
+mkdir -p "$out" "$work/home/.config/margin"
+echo "theme: ${MARGIN_SHOOT_THEME:-dark}" >"$work/home/.config/margin/config.yaml"
 
 chrome=$(command -v chromium || command -v google-chrome-stable || command -v google-chrome || command -v chromium-browser)
 tags=shoot

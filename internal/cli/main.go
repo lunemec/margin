@@ -215,6 +215,7 @@ func cmdOpen(args []string) error {
 	}
 
 	m := tui.New(tui.Options{ReviewPath: path, AgentPane: *agent, Submit: !*noSubmit, Guide: !*full, Blind: *blind})
+	tui.UseTerminalTheme()
 	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	if w, err := watch.New(func() { p.Send(tui.ChangedMsg{}) }); err == nil {
 		defer w.Close()

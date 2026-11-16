@@ -3,13 +3,14 @@ package tui
 import (
 	"strings"
 
+	"github.com/charmbracelet/lipgloss"
 	"github.com/mattn/go-runewidth"
 
 	"github.com/redrick/margin/internal/doc"
 	"github.com/redrick/margin/internal/render"
 )
 
-const (
+var (
 	colText      = "#c9d1d9"
 	colDim       = "#7d8590"
 	colTitle     = "#f0f6fc"
@@ -48,13 +49,40 @@ type kindStyle struct {
 	icon, label, color string
 }
 
-var kindStyles = map[string]kindStyle{
-	doc.KindIssue:    {"!", "problem", colProblem},
-	doc.KindQuestion: {"?", "question", colChanged},
-	doc.KindDecide:   {"◆", "your call", colDecide},
-	doc.KindOK:       {"✓", "looks right", colAdded},
-	doc.KindInfo:     {"i", "context", colHeading},
-	doc.KindNit:      {"·", "nit", colNit},
+var kindStyles = makeKindStyles()
+
+func makeKindStyles() map[string]kindStyle {
+	return map[string]kindStyle{
+		doc.KindIssue:    {"!", "problem", colProblem},
+		doc.KindQuestion: {"?", "question", colChanged},
+		doc.KindDecide:   {"◆", "your call", colDecide},
+		doc.KindOK:       {"✓", "looks right", colAdded},
+		doc.KindInfo:     {"i", "context", colHeading},
+		doc.KindNit:      {"·", "nit", colNit},
+	}
+}
+
+// UseTerminalTheme switches to light colours when the terminal has a light background. Call it
+// before the program takes over the terminal: it asks the terminal for its background colour.
+func UseTerminalTheme() {
+	if !lipgloss.HasDarkBackground() {
+		useLight()
+	}
+}
+
+func useLight() {
+	colText, colDim, colTitle, colHeading = "#1f2328", "#656d76", "#0d1117", "#0550ae"
+	colProblem, colAdded, colChanged, colRemoved = "#cf222e", "#1a7f37", "#9a6700", "#cf222e"
+	colGhost, colCode, colNit, colInk, colBar = "#8c5a5f", "#953800", "#6e7781", "#ffffff", "#eaeef2"
+	colNoteSel, colCursorNum, colMatch, colTested = "#0d1117", "#0969da", "#bf8700", "#1b7c83"
+	colSpotDim, colDecide, colMoved, colComment = "#afb8c1", "#8250df", "#0550ae", "#9a6700"
+	tintAdded, tintAddedCur, tintAddedHL = "#e6ffec", "#ccffd8", "#abf2bc"
+	tintRemoved, tintRemovedCur, tintRemovedHL = "#ffebe9", "#ffd7d5", "#ffc1bd"
+	tintCursor, tintNoteSel, tintMoved, tintMovedCur = "#ddf4ff", "#eef2f7", "#eef4ff", "#dbe9ff"
+	tintEditSel, colEditCur, colInsCur = "#b6d7ff", "#bf8700", "#1b7c83"
+	kindStyles = makeKindStyles()
+	verdicts = makeVerdicts()
+	render.Light = true
 }
 
 func (m *Model) noteStyle(n *doc.Note) kindStyle {

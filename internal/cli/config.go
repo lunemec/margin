@@ -30,6 +30,7 @@ const configHelp = `Settings, shared by margin-tui and margin-gui:
                   - command: go test -count=1 -v {dir} -run {run}
               Edit it in the file, in margin-gui's settings, or with C in margin-tui's test
               output. margin never runs a command a repository brings along, only these.
+  theme       margin-gui's look: light, dark, or unset to follow the system (the default)
 
   $MARGIN_DIR and $MARGIN_AGENT override the file.
 
@@ -49,7 +50,7 @@ func cmdConfig(args []string) error {
 		return nil
 	case args[0] == "get" && len(args) <= 2:
 		c := config.Load()
-		vals := map[string]string{"reviews": c.Reviews, "agent": c.Agent, "agent_note": c.AgentNote}
+		vals := map[string]string{"reviews": c.Reviews, "agent": c.Agent, "agent_note": c.AgentNote, "theme": cmp.Or(c.Theme, "system")}
 		if len(args) == 2 {
 			v, ok := vals[args[1]]
 			if !ok {
@@ -58,7 +59,7 @@ func cmdConfig(args []string) error {
 			fmt.Println(v)
 			return nil
 		}
-		fmt.Printf("# %s\nreviews: %s\nagent: %s\nagent_note: %s\n", config.Path(), c.Reviews, c.Agent, c.AgentNote)
+		fmt.Printf("# %s\nreviews: %s\nagent: %s\nagent_note: %s\ntheme: %s\n", config.Path(), c.Reviews, c.Agent, c.AgentNote, cmp.Or(c.Theme, "system"))
 		for _, t := range c.Tests {
 			fmt.Printf("tests: %s → %s\n", cmp.Or(t.Repo, "*"), t.Command)
 		}
@@ -79,6 +80,8 @@ func cmdConfig(args []string) error {
 			c.Agent = val
 		case "agent_note":
 			c.AgentNote = val
+		case "theme":
+			c.Theme = strings.TrimPrefix(val, "system")
 		default:
 			return fmt.Errorf("unknown setting %q; see margin config help", args[1])
 		}

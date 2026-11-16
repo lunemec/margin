@@ -94,6 +94,7 @@ Both front ends share `~/.config/margin/config.yaml` (`$XDG_CONFIG_HOME/margin/c
 reviews: repo        # where reviews are kept: repo, state, or a directory
 agent: claude        # the agent command
 agent_note: ""       # a line added to the agent's instructions
+theme: light         # margin-gui only: light or dark; leave it out to follow the system
 ```
 
 - **`reviews: repo`** (the default) keeps reviews in `.margin/reviews/` inside the repository,

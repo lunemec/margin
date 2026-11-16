@@ -34,31 +34,31 @@ const byExt = {
   toml: () => StreamLanguage.define(toml),
 };
 
-// github-dark, like the rest of the code in the window.
+// github-dark or github, like the rest of the code in the window: the colours are in style.css.
 const style = HighlightStyle.define([
-  { tag: [t.keyword, t.modifier, t.operatorKeyword, t.controlKeyword, t.definitionKeyword, t.moduleKeyword], color: "#ff7b72" },
-  { tag: [t.string, t.special(t.string), t.regexp, t.character], color: "#a5d6ff" },
-  { tag: [t.number, t.bool, t.null, t.atom, t.constant(t.name), t.standard(t.name)], color: "#79c0ff" },
-  { tag: [t.function(t.variableName), t.function(t.propertyName), t.definition(t.function(t.variableName))], color: "#d2a8ff" },
-  { tag: [t.typeName, t.className, t.namespace], color: "#ffa657" },
-  { tag: [t.comment, t.lineComment, t.blockComment, t.docComment], color: "#8b949e", fontStyle: "italic" },
-  { tag: [t.propertyName, t.attributeName], color: "#79c0ff" },
-  { tag: [t.tagName], color: "#7ee787" },
-  { tag: [t.operator, t.punctuation, t.bracket], color: "#c9d1d9" },
-  { tag: t.heading, color: "#79c0ff", fontWeight: "bold" },
+  { tag: [t.keyword, t.modifier, t.operatorKeyword, t.controlKeyword, t.definitionKeyword, t.moduleKeyword], color: "var(--cm-keyword)" },
+  { tag: [t.string, t.special(t.string), t.regexp, t.character], color: "var(--cm-string)" },
+  { tag: [t.number, t.bool, t.null, t.atom, t.constant(t.name), t.standard(t.name)], color: "var(--cm-number)" },
+  { tag: [t.function(t.variableName), t.function(t.propertyName), t.definition(t.function(t.variableName))], color: "var(--cm-function)" },
+  { tag: [t.typeName, t.className, t.namespace], color: "var(--cm-type)" },
+  { tag: [t.comment, t.lineComment, t.blockComment, t.docComment], color: "var(--cm-comment)", fontStyle: "italic" },
+  { tag: [t.propertyName, t.attributeName], color: "var(--cm-number)" },
+  { tag: [t.tagName], color: "var(--cm-tag)" },
+  { tag: [t.operator, t.punctuation, t.bracket], color: "var(--sx-fg)" },
+  { tag: t.heading, color: "var(--cm-number)", fontWeight: "bold" },
 ]);
 
 const theme = EditorView.theme(
   {
-    "&": { backgroundColor: "var(--bg-1)", color: "#c9d1d9", fontSize: "12.5px" },
-    ".cm-content": { fontFamily: "var(--mono)", caretColor: "#e3b341", padding: "2px 0" },
+    "&": { backgroundColor: "var(--bg-1)", color: "var(--sx-fg)", fontSize: "12.5px" },
+    ".cm-content": { fontFamily: "var(--mono)", caretColor: "var(--warn)", padding: "2px 0" },
     ".cm-scroller": { fontFamily: "var(--mono)", lineHeight: "1.5" },
-    ".cm-gutters": { backgroundColor: "var(--bg-1)", color: "var(--fg-faint)", border: "none", borderRight: "2px solid #e3b341" },
+    ".cm-gutters": { backgroundColor: "var(--bg-1)", color: "var(--fg-faint)", border: "none", borderRight: "2px solid var(--warn)" },
     ".cm-activeLine": { backgroundColor: "rgba(227, 179, 65, .07)" },
     ".cm-activeLineGutter": { backgroundColor: "rgba(227, 179, 65, .18)", color: "var(--fg)" },
     "&.cm-focused": { outline: "none" },
-    ".cm-cursor, .cm-fat-cursor": { borderLeftColor: "#e3b341" },
-    "&:not(.cm-focused) .cm-fat-cursor": { outline: "1px solid #e3b341" },
+    ".cm-cursor, .cm-fat-cursor": { borderLeftColor: "var(--warn)" },
+    "&:not(.cm-focused) .cm-fat-cursor": { outline: "1px solid var(--warn)" },
     ".cm-fat-cursor": { background: "rgba(227, 179, 65, .75) !important", color: "#0d1117 !important" },
     ".cm-selectionBackground, &.cm-focused .cm-selectionBackground, ::selection": { backgroundColor: "rgba(122, 162, 247, .35) !important" },
     ".cm-panels": { backgroundColor: "var(--bg-2)", color: "var(--fg)", fontFamily: "var(--mono)" },

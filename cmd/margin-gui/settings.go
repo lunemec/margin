@@ -5,12 +5,16 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/wailsapp/wails/v3/pkg/application"
+
 	"github.com/redrick/margin/internal/cli"
 	"github.com/redrick/margin/internal/config"
 )
 
 // Settings is the shared margin settings file, seen and changed from the window.
-type Settings struct{}
+type Settings struct {
+	app *application.App
+}
 
 type SettingsView struct {
 	Path   string        `json:"path"`
@@ -54,7 +58,7 @@ func (s *Settings) Get() SettingsView {
 }
 
 func (s *Settings) Save(c config.Config) (SettingsView, error) {
-	c.Reviews, c.Agent, c.AgentNote = strings.TrimSpace(c.Reviews), strings.TrimSpace(c.Agent), strings.TrimSpace(c.AgentNote)
+	c.Reviews, c.Agent, c.AgentNote, c.Theme = strings.TrimSpace(c.Reviews), strings.TrimSpace(c.Agent), strings.TrimSpace(c.AgentNote), strings.TrimSpace(c.Theme)
 	if c.Tests == nil {
 		old, err := config.File()
 		if err != nil {

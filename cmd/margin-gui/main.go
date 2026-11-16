@@ -50,7 +50,7 @@ func main() {
 		fmt.Print(usage)
 		return
 	}
-	ws, rv, ag := &Workspace{}, &Reviews{}, &Agents{}
+	ws, rv, ag, st := &Workspace{}, &Reviews{}, &Agents{}, &Settings{}
 	rv.recovered, rv.recoverErr = recoverTrials()
 	app := application.New(application.Options{
 		Name:        "margin",
@@ -59,14 +59,15 @@ func main() {
 			application.NewService(ws),
 			application.NewService(rv),
 			application.NewService(ag),
-			application.NewService(&Settings{}),
+			application.NewService(st),
 		},
 		Assets: application.AssetOptions{
 			Handler: application.BundledAssetFileServer(assets),
 		},
 		Mac: application.MacOptions{ApplicationShouldTerminateAfterLastWindowClosed: true},
 	})
-	ws.app, rv.app, ag.app = app, app, app
+	ws.app, rv.app, ag.app, st.app = app, app, app, app
+	watchTheme(app)
 	rv.agents = ag
 
 	app.Window.NewWithOptions(application.WebviewWindowOptions{
@@ -74,7 +75,7 @@ func main() {
 		Width:            1500,
 		Height:           950,
 		URL:              "/",
-		BackgroundColour: application.NewRGB(13, 17, 23),
+		BackgroundColour: windowBackground(st.Theme().Dark),
 		DevToolsEnabled:  true,
 	})
 
