@@ -3,7 +3,6 @@ package tui
 import (
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
 	"github.com/mattn/go-runewidth"
 
 	"github.com/redrick/margin/internal/doc"
@@ -63,9 +62,9 @@ func makeKindStyles() map[string]kindStyle {
 }
 
 // UseTerminalTheme switches to light colours when the terminal has a light background. Call it
-// before the program takes over the terminal: it asks the terminal for its background colour.
+// before the program takes over the terminal.
 func UseTerminalTheme() {
-	if !lipgloss.HasDarkBackground() {
+	if terminalIsLight() {
 		useLight()
 	}
 }

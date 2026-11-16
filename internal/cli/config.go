@@ -30,7 +30,8 @@ const configHelp = `Settings, shared by margin-tui and margin-gui:
                   - command: go test -count=1 -v {dir} -run {run}
               Edit it in the file, in margin-gui's settings, or with C in margin-tui's test
               output. margin never runs a command a repository brings along, only these.
-  theme       margin-gui's look: light, dark, or unset to follow the system (the default)
+  theme       margin-gui's look: light, dark, or unset to follow the system (the default);
+              margin-tui always matches the terminal's background
 
   $MARGIN_DIR and $MARGIN_AGENT override the file.
 

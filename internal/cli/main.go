@@ -214,8 +214,8 @@ func cmdOpen(args []string) error {
 		return fmt.Errorf("%s is already open (socket %s)", pos[0], sock)
 	}
 
-	m := tui.New(tui.Options{ReviewPath: path, AgentPane: *agent, Submit: !*noSubmit, Guide: !*full, Blind: *blind})
 	tui.UseTerminalTheme()
+	m := tui.New(tui.Options{ReviewPath: path, AgentPane: *agent, Submit: !*noSubmit, Guide: !*full, Blind: *blind})
 	p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
 	if w, err := watch.New(func() { p.Send(tui.ChangedMsg{}) }); err == nil {
 		defer w.Close()
