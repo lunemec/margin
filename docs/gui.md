@@ -273,6 +273,8 @@ What differs is how you get around:
 - **Settings and export.** margin-gui has a settings window (`ctrl+,`) and an export window.
   margin-tui has `margin-tui config` and `margin-tui export`; they write the same settings file and
   the same Markdown.
+- **Light or dark.** margin-gui follows the desktop, or the theme picked in its settings. margin-tui
+  follows the terminal: it asks for the background colour at start and matches it.
 - **Clicks and keys.** Every key in margin-gui also has a button. In margin-tui clicks only choose
   where you are (a line, a block, a link, a note, a stop); every action is a key.
 - **Layout.** margin-gui always shows the list of stops (margin-tui: `tab`) and shows notes in full

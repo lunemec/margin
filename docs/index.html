@@ -808,7 +808,7 @@ dist/</pre>
         <article class="tile s3 dark reveal">
           <span class="tag">margin-tui</span>
           <h3>The terminal viewer.</h3>
-          <p>The review in your terminal, the agent in a tmux pane beside it. Everything is a key; the mouse picks lines, blocks and stops.</p>
+          <p>The review in your terminal, the agent in a tmux pane beside it. Everything is a key; the mouse picks lines, blocks and stops. Light or dark, as your terminal is.</p>
           <pre><span class="k">go install</span> github.com/redrick/margin/cmd/margin-tui@latest
 <span class="k">margin-tui</span> pick</pre>
           <p><a href="https://github.com/redrick/margin/blob/main/docs/tui.md">Read the manual →</a></p>
@@ -816,7 +816,7 @@ dist/</pre>
         <article class="tile s3 dark reveal">
           <span class="tag">margin-gui</span>
           <h3>The desktop app.</h3>
-          <p>Your repositories, worktrees, branches and pull requests in a sidebar, the agent in a terminal inside the window. No tmux.</p>
+          <p>Your repositories, worktrees, branches and pull requests in a sidebar, the agent in a terminal inside the window. No tmux. Light or dark, as your desktop is.</p>
           <pre><span class="k">go install</span> github.com/redrick/margin/cmd/margin-gui@latest
 <span class="k">margin-gui</span> --install   <span class="c"># into your launcher</span></pre>
           <p><a href="https://github.com/redrick/margin/blob/main/docs/gui.md">Read the manual →</a></p>
@@ -835,6 +835,12 @@ dist/</pre>
           <span class="tag">Answers</span>
           <h3>Talk back.</h3>
           <p>The agent answers each comment in a markdown note. margin-gui shows it with <kbd>A</kbd>; reply under an answer or edit the note in place.</p>
+        </article>
+        <article class="tile s6 reveal">
+          <span class="tag">Light or dark</span>
+          <h3>Matches your screen.</h3>
+          <p>margin-gui follows your desktop's light or dark setting and switches along with it, or stays on the one you pick in its settings. margin-tui asks your terminal for its background, tmux included, and picks light or dark colours to match. Code, notes and the agent's terminal come along.</p>
+          <div class="cmp tile-cmp" style="max-width: 820px; margin-inline: auto"><img loading="lazy" src="screenshots/gui/hero.webp" width="2192" height="1289" alt="margin-gui in its dark theme"><img class="g" loading="lazy" src="screenshots/gui/hero-light.webp" alt="margin-gui in its light theme"><span class="cmp-tag l">dark</span><span class="cmp-tag r">light</span><input class="cmp-range" type="range" min="0" max="100" value="50" aria-label="Drag to compare the dark and light themes"><span class="cmp-bar"></span></div>
         </article>
         <article class="tile s6 reveal">
           <span class="tag">The skill</span>

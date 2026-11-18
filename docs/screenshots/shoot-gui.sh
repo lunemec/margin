@@ -98,6 +98,13 @@ shot() {
 }
 
 shot hero 1462 860 "full=0&do=g:reserve:2&agent=$work/agent.ans"
+# The hero again in the light theme, for the page's light/dark slider; the agent's text in the
+# colours a terminal agent would pick on a light background.
+echo "theme: light" >"$work/home/.config/margin/config.yaml"
+sed -e 's/38;2;139;148;158m/38;2;101;109;118m/g' -e 's/38;2;201;209;217m/38;2;31;35;40m/g' \
+	-e 's/1;38;2;240;246;252m/1;38;2;13;17;23m/g' -e 's/38;2;63;185;80m/38;2;26;127;55m/g' "$work/agent.ans" >"$work/agent-light.ans"
+shot hero-light 1462 860 "full=0&do=g:reserve:2&agent=$work/agent-light.ans"
+echo "theme: ${MARGIN_SHOOT_THEME:-dark}" >"$work/home/.config/margin/config.yaml"
 shot guide-overview 1462 910 "full=0&do=g:0"
 shot guide-brief 1462 1036 "full=0&do=g:reserve"
 shot guide-change 1462 1120 "full=0&do=g:reserve,Space,Space"
