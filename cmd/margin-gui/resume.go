@@ -156,6 +156,9 @@ func updateReviewResume(path string, update func(*reviewResume) bool) error {
 }
 
 func leaseAgent(path string) (*os.File, error) {
+	if !filepath.IsAbs(path) {
+		return nil, errors.New("open a review before starting its agent")
+	}
 	lock := resumePath(path) + ".agent-lock"
 	if err := os.MkdirAll(filepath.Dir(lock), 0o700); err != nil {
 		return nil, err

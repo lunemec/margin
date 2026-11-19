@@ -71,7 +71,7 @@ async function refreshAgent(opened) {
   if (state.opened !== opened || request !== agentStatusRequest) return null;
   opened.agent = saved ?? {};
   setAgentLive(live);
-  $("#agent-btn").disabled = !!opened.launching;
+  $("#agent-btn").disabled = !!(opened.launching || opened.linking);
   return live;
 }
 
@@ -99,7 +99,7 @@ async function attachAgent(opened, restore) {
 
 async function toggleAgent() {
   const opened = state.opened;
-  if (!opened?.agent || state.view?.path !== opened.path) return;
+  if (!opened?.agent || opened.linking || state.view?.path !== opened.path) return;
   if (state.agentLive) {
     try {
       await api("Agents.Stop", opened.path);
@@ -144,7 +144,7 @@ async function startAgent(opened, action, automatic = false) {
 
 function linkAgent() {
   const opened = state.opened;
-  if (!opened || !opened.agent?.canLink) return;
+  if (!opened?.agent?.canLink || opened.linking) return;
   const form = document.createElement("form");
   form.className = "settings";
   form.innerHTML = `<section>
@@ -168,8 +168,13 @@ function linkAgent() {
     const submit = form.querySelector("button");
     if (submit.disabled) return;
     submit.disabled = true;
+    opened.linking = true;
+    $("#agent-btn").disabled = true;
     try {
       await api("Agents.LinkConversation", opened.path, opened.repo, input.value);
+      if (state.opened !== opened) return;
+      opened.agent = undefined;
+      await refreshAgent(opened);
       if (!modal.isConnected || state.opened !== opened) return;
       closeModal();
       await startAgent(opened, "Resume");
@@ -178,6 +183,9 @@ function linkAgent() {
       message.textContent = errText(err);
       message.classList.remove("hidden");
       submit.disabled = false;
+    } finally {
+      opened.linking = false;
+      if (state.opened === opened) $("#agent-btn").disabled = !opened.agent || !!opened.launching;
     }
   };
 }

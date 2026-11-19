@@ -72,10 +72,10 @@ func (a *Agents) Start(reviewPath, repo string, created bool, cols, rows int) (s
 	if s, ok := a.sessions[reviewPath]; ok && !s.done {
 		return s.replay(), nil
 	}
-	if _, err := loadAgentReview(reviewPath, repo); err != nil {
-		return "", err
-	}
 	return "", startLeasedAgent(reviewPath, func(lease *os.File) error {
+		if _, err := loadAgentReview(reviewPath, repo); err != nil {
+			return err
+		}
 		return a.launchNew(lease, reviewPath, repo, config.Load().Agent, created, false, cols, rows)
 	})
 }

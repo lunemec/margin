@@ -111,15 +111,15 @@ func (a *Agents) LinkConversation(path, repo, id string) error {
 	if r := a.sessions[path]; r != nil && !r.done {
 		return errors.New("stop this review's agent before linking a conversation")
 	}
-	rv, err := loadAgentReview(path, repo)
-	if err != nil {
-		return err
-	}
 	lease, err := leaseAgent(path)
 	if err != nil {
 		return err
 	}
 	defer lease.Close()
+	rv, err := loadAgentReview(path, repo)
+	if err != nil {
+		return err
+	}
 	id = strings.TrimSpace(id)
 	return lockResume(func() error {
 		record := readReviewResume(path)
@@ -165,11 +165,11 @@ func (a *Agents) restore(path, repo string, automatic, continued bool, cols, row
 	if s := a.sessions[path]; s != nil && !s.done {
 		return s.replay(), nil
 	}
-	rv, err := loadAgentReview(path, repo)
-	if err != nil {
-		return "", err
-	}
-	err = startLeasedAgent(path, func(lease *os.File) error {
+	err := startLeasedAgent(path, func(lease *os.File) error {
+		rv, err := loadAgentReview(path, repo)
+		if err != nil {
+			return err
+		}
 		saved := readReviewResume(path).Agent
 		if automatic && (saved == nil || !saved.Auto || saved.Failed) {
 			return errAutoResumeDisabled
