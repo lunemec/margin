@@ -58,10 +58,15 @@ export async function openReview(dir, arg, fresh = false, file = "") {
   await hooks.attachAgent?.();
 }
 
+let reloadRequest = 0;
 async function reload(top = false) {
+  const opened = state.opened;
+  const request = ++reloadRequest;
   try {
-    applyView(await api("Reviews.Current"), top);
+    const view = await api("Reviews.Current");
+    if (request === reloadRequest && state.opened === opened && view.path === opened?.path) applyView(view, top);
   } catch (e) {
+    if (request !== reloadRequest || state.opened !== opened) return;
     if (!state.view) $("#station").innerHTML = `<div class="spinner error">${esc(errText(e))}</div>`;
     else toast(errText(e), true);
   }
@@ -69,18 +74,26 @@ async function reload(top = false) {
 
 function applyView(view, top = false) {
   const prevId = cur()?.id;
+  const prev = state.view;
+  if (prev?.path === view.path && prev.readerRevision > view.readerRevision) {
+    view.reader = prev.reader;
+    view.counts = prev.counts;
+    view.readerRevision = prev.readerRevision;
+  }
   trackFresh(view);
-  if (state.view && state.view !== view && !top) {
+  if (prev && prev !== view && !top) {
     state.around = {};
     if (state.spot >= 0) {
-      if (!view.coverage || state.spot >= view.coverage.tests.length) {
-        state.spot = -1;
-        state.spotLines = null;
-      } else {
-        api("Reviews.RunsLines", state.spot).then((l) => {
+      const test = prev.coverage?.tests[state.spot];
+      const spot = test ? view.coverage?.tests.findIndex((t) => t.name === test.name && t.group === test.group && t.file === test.file) ?? -1 : -1;
+      state.spot = spot;
+      state.spotLines = null;
+      if (spot >= 0) {
+        api("Reviews.RunsLines", spot, view.version).then((l) => {
+          if (state.view !== view || state.spot !== spot) return;
           state.spotLines = l;
           renderKeepScroll();
-        });
+        }).catch((e) => state.view === view && toast(errText(e), true));
       }
     }
   }
@@ -91,6 +104,18 @@ function applyView(view, top = false) {
   renderReview();
   if (!top) $("#station").scrollTop = scroll;
   refreshParts();
+}
+
+function applyReader(update) {
+  const v = state.view;
+  if (!v || update.path !== v.path || update.readerRevision <= v.readerRevision) return;
+  v.readerRevision = update.readerRevision;
+  if (JSON.stringify(v.reader) === JSON.stringify(update.reader) && JSON.stringify(v.counts) === JSON.stringify(update.counts)) return;
+  v.reader = update.reader;
+  v.counts = update.counts;
+  const scroll = $("#station").scrollTop;
+  renderReview();
+  $("#station").scrollTop = scroll;
 }
 
 // trackFresh marks notes that appeared since the last load, so notes the agent adds elsewhere are not missed.
@@ -116,27 +141,27 @@ function trackFresh(view) {
 async function refreshParts() {
   const s = cur();
   if (!s) return;
+  const view = state.view;
   let changed = false;
-  for (const k of Object.keys(state.parts)) {
-    const [sid, pi] = k.split("|");
-    if (sid !== s.id) continue;
-    try {
-      state.parts[k] = await api("Reviews.Lines", sid, +pi, state.expand[k] ?? 0, !!state.whole[k]);
-      changed = true;
-    } catch {
-      delete state.parts[k];
-    }
+  for (let pi = 0; pi < s.parts.length; pi++) {
+    if (state.view !== view || cur() !== s) return;
+    const k = partKey(s, pi);
+    const extra = state.expand[k] ?? 0, whole = !!state.whole[k];
+    if (!extra && !whole) continue;
+    if (await loadPart(s, pi, extra, whole, true)) changed = true;
   }
-  if (changed) renderKeepScroll();
+  if (changed && state.view === view && cur() === s) renderKeepScroll();
 }
 
 export async function act(name, ...args) {
+  const opened = state.opened;
   try {
     const v = await api("Reviews." + name, ...args);
-    if (v) applyView(v);
+    if (state.opened !== opened || v?.path !== opened?.path) return false;
+    applyReader(v);
     return true;
   } catch (e) {
-    toast(errText(e), true);
+    if (state.opened === opened) toast(errText(e), true);
     return false;
   }
 }
@@ -145,6 +170,9 @@ let reloadTimer;
 Events.On("review:changed", () => {
   clearTimeout(reloadTimer);
   reloadTimer = setTimeout(() => state.opened && reload(), 150);
+});
+Events.On("review:reader", () => {
+  if (state.opened && state.view) act("Reader");
 });
 
 // The agent drives the window through the control socket: margin goto, where and reload.
@@ -221,8 +249,8 @@ async function gotoFileLine(file, line) {
         if (!match(p) || line < 1 || line > p.len || (pass === 0 && (line - 1 < p.start || line - 1 > p.end))) continue;
         if (pass === 1) {
           if (si !== state.station) goStation(si);
-          state.whole[partKey(st[si], pi)] = true;
-          await loadPart(st[si], pi);
+          const s = st[si];
+          if (!(await loadPart(s, pi, state.expand[partKey(s, pi)] ?? 0, true))) return;
         }
         jump({ si, pi, line: line - 1 });
         return;
@@ -322,7 +350,7 @@ function renderToolbar() {
   btn("Removed", "Show removed lines (d)", state.showGhosts, () => toggle("showGhosts"));
   btn("Split", "Old and new side by side (s)", state.split, () => toggle("split"));
   btn("Notes", "Show the agent's notes (n)", state.showNotes, () => toggle("showNotes"));
-  btn("Fold", "Fold unchanged stretches (z)", !state.unfold, () => toggle("unfold"));
+  if (!guided()) btn("Fold", "Fold unchanged stretches (z)", !state.unfold, () => toggle("unfold"));
   btn("Blind", "Hide the agent's notes on high-risk stops until you revealed them", reader().blind, () => act("SetBlind", !reader().blind));
   if (blind(s)) btn("Reveal notes", "Show the agent's notes on this stop (v)", false, reveal, "warn");
   const search = el(`<input id="search" class="search" placeholder="Search /" value="${esc(state.query)}">`);
@@ -516,7 +544,7 @@ function codeRows(s, pi, from, to, opts = {}) {
   const code = scroll.firstElementChild;
   const shown = opts.shown ?? new Set();
   const spotSet = state.spotLines ? new Set(state.spotLines[partKey(s, pi)] ?? []) : null;
-  const folds = state.unfold || opts.step ? [] : (p.folds ?? []);
+  const folds = state.unfold || opts.step || opts.whole ? [] : (p.folds ?? []);
   const rows = p.rows.filter((r) => (r.n ? r.n - 1 >= from && r.n - 1 <= to : to >= p.len - 1));
   const hlOld = (r) => (r.hl ? [r.hl[0], r.hl[1]] : null);
   // In side by side, removed lines pair with the changed lines that replaced them.
@@ -549,7 +577,7 @@ function codeRows(s, pi, from, to, opts = {}) {
     const inTry = trb && trb.station === s.id && trb.part === pi && r.n && line >= trb.line && line <= trb.end;
     if (inTry && line > trb.line) continue;
     const ghosts = r.g ?? [];
-    if (split) {
+    if (split && state.showGhosts) {
       const paired = [...pairedLeft.values()].filter((v) => v.from === k).length;
       ghosts.slice(paired).forEach((g, j) => code.append(ghostRow(g, r.gm?.[paired + j], null, "")));
     } else if (state.showGhosts) {
@@ -638,38 +666,52 @@ function partTitle(s, pi, p) {
 function partBox(s, pi, from, to, title, opts = {}) {
   const p = partData(s, pi);
   const k = partKey(s, pi);
+  const extra = state.parts[k] ? (state.expand[k] ?? 0) : 0;
+  const whole = !!state.parts[k] && !!state.whole[k];
+  const start = whole ? p.start : opts.step ? Math.max(p.start, from - extra) : from;
+  const end = whole ? p.end : opts.step ? Math.min(p.end, to + extra) : to;
+  const folded = !opts.step && !state.unfold && p.folds?.length;
+  const wholeShown = start === 0 && end >= p.len - 1 && !folded;
+  const tryStart = opts.step ? from : s.parts[pi].start;
+  const tryEnd = opts.step ? to : s.parts[pi].end;
+  const changes = p.base || p.err ? [] : p.rows.filter((r) => r.n && r.n - 1 >= tryStart && r.n - 1 <= tryEnd && (r.k === "add" || r.k === "chg"));
   const part = el(`<section class="part${p.background ? " bgpart" : ""}">
     <div class="part-head"><span class="file">${esc(title ?? p.file)}</span><span class="label">${title ? (p.baseFile ? "renamed from " + esc(p.baseFile) : "") : partTitle(s, pi, p)}</span>
     <span class="spacer"></span>
     ${!p.err && state.view.coverage && p.rows?.some((r) => r.cov === "run") ? `<button class="na run-btn" data-run="1" title="Run the tests that run this part's changed lines">▶ tests</button>` : ""}
-    ${!p.err && !p.base && p.rows?.some((r) => r.k === "add" || r.k === "chg") ? `<button class="na" data-try="1" title="Edit or delete this part's changed lines and see whether the tests notice">✎ try a change</button>` : ""}
-    ${p.err ? "" : `<button class="na" data-w="-1" title="Less context (-)">−</button><button class="na" data-w="1" title="More context (+)">+</button>
-    <button class="na${state.whole[k] ? " on" : ""}" data-f="1" title="Whole file (f)">whole file</button>`}</div></section>`);
+    ${changes.length ? `<button class="na" data-try="1" title="Edit the reviewed changes and see whether the tests notice">✎ try a change</button>` : ""}
+    ${p.err ? "" : `<button class="na" data-w="-1" title="Less context (-)"${whole || !extra ? " disabled" : ""}>−</button><button class="na" data-w="1" title="More context (+)"${whole || wholeShown ? " disabled" : ""}>+</button>
+    <button class="na${whole ? " on" : ""}" data-f="1" aria-pressed="${whole}" title="${whole ? "Return to the reviewed range" : "Show the whole file"} (f)"${!whole && wholeShown ? " disabled" : ""}>${whole ? "Back to change" : wholeShown ? "Whole file shown" : "Whole file"}</button>`}</div></section>`);
   part.querySelectorAll("[data-w]").forEach((b) => (b.onclick = () => widen(s, pi, +b.dataset.w)));
   part.querySelector("[data-f]")?.addEventListener("click", () => wholeFile(s, pi));
   part.querySelector("[data-run]")?.addEventListener("click", () => runFor(s, pi));
-  part.querySelector("[data-try]")?.addEventListener("click", () => tryPart(s, pi));
+  part.querySelector("[data-try]")?.addEventListener("click", () => startTry(null, { station: s.id, part: pi, line: changes[0].n - 1, end: changes.at(-1).n - 1 }));
   if (p.about && opts.about !== false && (p.hunk ?? 0) <= 1) part.append(el(`<div class="part-about">${prose(p.about)}</div>`));
   if (p.err) {
     part.append(el(`<div class="part-err">${esc(p.err)}</div>`));
     return part;
   }
-  const extra = state.expand[k] || state.whole[k];
-  part.append(codeRows(s, pi, extra && opts.step ? Math.min(from, p.start) : from, extra && opts.step ? Math.max(to, p.end) : to, opts));
+  part.append(codeRows(s, pi, start, end, { ...opts, whole }));
   return part;
 }
 
 async function widen(s, pi, dir) {
+  const view = state.view;
   const k = partKey(s, pi);
-  const step = await stepSize();
-  state.expand[k] = Math.max(0, (state.expand[k] ?? 0) + dir * step);
-  await loadPart(s, pi);
+  if (state.whole[k]) return toast("Return to the change to adjust its context.");
+  try {
+    const step = await stepSize();
+    if (state.view !== view || cur() !== s) return;
+    const extra = Math.max(0, (state.expand[k] ?? 0) + dir * step);
+    if (extra !== (state.expand[k] ?? 0)) await loadPart(s, pi, extra, false);
+  } catch (e) {
+    if (state.view === view) toast(errText(e), true);
+  }
 }
 
-async function wholeFile(s, pi) {
+function wholeFile(s, pi) {
   const k = partKey(s, pi);
-  state.whole[k] = !state.whole[k];
-  await loadPart(s, pi);
+  return loadPart(s, pi, state.expand[k] ?? 0, !state.whole[k]);
 }
 
 let expandStep = 0;
@@ -678,18 +720,31 @@ async function stepSize() {
   return expandStep;
 }
 
-async function loadPart(s, pi) {
+const partLoads = new Map();
+async function loadPart(s, pi, extra, whole, refresh = false) {
+  const view = state.view;
   const k = partKey(s, pi);
-  if (!state.expand[k] && !state.whole[k]) {
-    delete state.parts[k];
-  } else {
-    try {
-      state.parts[k] = await api("Reviews.Lines", s.id, pi, state.expand[k] ?? 0, !!state.whole[k]);
-    } catch (e) {
-      toast(errText(e), true);
+  if (refresh && partLoads.get(k)?.view === view) return false;
+  const request = { view };
+  partLoads.set(k, request);
+  try {
+    const part = extra || whole ? await api("Reviews.Lines", s.id, pi, extra, whole, view.version) : null;
+    if (state.view !== view || partLoads.get(k) !== request) return false;
+    state.expand[k] = extra;
+    state.whole[k] = whole;
+    if (part) state.parts[k] = part;
+    else delete state.parts[k];
+    if (!refresh && cur() === s) renderKeepScroll();
+    return true;
+  } catch (e) {
+    if (state.view === view && partLoads.get(k) === request) {
+      if (refresh) delete state.parts[k];
+      else toast(errText(e), true);
     }
+    return false;
+  } finally {
+    if (partLoads.get(k) === request) partLoads.delete(k);
   }
-  renderKeepScroll();
 }
 
 // Notes, comments and questions
@@ -1008,10 +1063,14 @@ function block() {
 }
 
 async function blockTests(s, part, from, to) {
+  const view = state.view;
   const p = partData(s, part);
   const ids = new Set();
   for (const r of p?.rows ?? []) {
-    if (r.cov === "run" && r.n - 1 >= from && r.n - 1 <= to) for (const ti of await testsAtLine(s.id, part, r.n - 1)) ids.add(ti);
+    if (r.cov !== "run" || r.n - 1 < from || r.n - 1 > to) continue;
+    const lineTests = await testsAtLine(s.id, part, r.n - 1);
+    if (state.view !== view) return [];
+    for (const ti of lineTests) ids.add(ti);
   }
   return [...ids];
 }
@@ -1540,14 +1599,15 @@ function wrapStep(body, s) {
 // Callers and history around a stop
 
 async function lookAround(s) {
+  const around = state.around;
   if (state.around[s.id]) return;
   state.around[s.id] = { loading: true };
   try {
-    state.around[s.id] = await api("Reviews.Around", s.id);
+    around[s.id] = await api("Reviews.Around", s.id);
   } catch (e) {
-    state.around[s.id] = { err: errText(e), symbols: [], history: [] };
+    around[s.id] = { err: errText(e), symbols: [], history: [] };
   }
-  if (cur()?.id === s.id) renderKeepScroll();
+  if (state.around === around && cur()?.id === s.id) renderKeepScroll();
 }
 
 const maxCallers = 5;
@@ -1978,10 +2038,14 @@ function renderTests(box) {
 }
 
 async function spotlight(ti) {
+  const view = state.view;
   try {
-    state.spotLines = await api("Reviews.RunsLines", ti);
+    const lines = await api("Reviews.RunsLines", ti, view.version);
+    if (state.view !== view) return;
+    state.spotLines = lines;
   } catch (e) {
-    return toast(errText(e), true);
+    if (state.view === view) toast(errText(e), true);
+    return;
   }
   state.spot = ti;
   const hit = findHit((s, pi, r) => (state.spotLines[partKey(s, pi)] ?? []).includes(r.n - 1) && (r.k === "add" || r.k === "chg")) ??
@@ -2002,15 +2066,18 @@ function endSpot() {
 
 async function openTests() {
   const s = cur();
-  if (!state.sel || state.sel.station !== s.id) return needLine("see the tests that run it");
-  if (!state.view.coverage) return toast("No coverage yet: ask the agent to run margin coverage.");
-  const p = partData(s, state.sel.part);
-  const row = p.rows.find((r) => r.n - 1 === state.sel.line);
-  if (row?.cov !== "run") return toast(`No test runs line ${state.sel.line + 1}.`);
-  const list = [...(await testsAtLine(s.id, state.sel.part, state.sel.line))];
-  const tests = state.view.coverage.tests;
+  const view = state.view, sel = state.sel;
+  if (!sel || sel.station !== s.id) return needLine("see the tests that run it");
+  if (!view.coverage) return toast("No coverage yet: ask the agent to run margin coverage.");
+  const p = partData(s, sel.part);
+  const row = p.rows.find((r) => r.n - 1 === sel.line);
+  if (row?.cov !== "run") return toast(`No test runs line ${sel.line + 1}.`);
+  const ids = await testsAtLine(s.id, sel.part, sel.line);
+  if (state.view !== view || state.sel !== sel || !ids.length) return;
+  const list = [...ids];
+  const tests = view.coverage.tests;
   list.sort((a, b) => tests[a].label.localeCompare(tests[b].label));
-  const line = state.sel.line;
+  const line = sel.line;
   const needle = (row.s ?? []).map((x) => x.t).join("").trim();
   const body = el(`<div class="tests-pop"></div>`);
   const picked = new Set();
@@ -2023,11 +2090,13 @@ async function openTests() {
     const [spot, src] = r.querySelectorAll("button");
     spot.onclick = () => {
       closeModal();
+      if (state.view !== view) return toast("The review changed. Open Tests again.");
       spotlight(ti);
     };
     src.onclick = async () => {
       try {
-        showPeek(await api("Reviews.TestSource", ti));
+        const peek = await api("Reviews.TestSource", ti, view.version);
+        if (state.view === view) showPeek(peek);
       } catch (e) {
         toast(errText(e), true);
       }
@@ -2038,12 +2107,13 @@ async function openTests() {
     <button class="small" data-agent>Ask the agent</button><button class="primary small" data-run>▶ Run ${list.length === 1 ? "it" : "picked, or all"} (r)</button></div>`);
   run.querySelector("[data-run]").onclick = () => {
     closeModal();
-    runTests(picked.size ? [...picked] : list, `${base(p.file)}:${line + 1}`);
+    runTests(picked.size ? [...picked] : list, `${base(p.file)}:${line + 1}`, view);
   };
   run.querySelector("[data-agent]").onclick = async () => {
     const ids = picked.size ? [...picked] : list.slice(0, 1);
     try {
-      await api("Reviews.RunTests", ids, p.file, line + 1, needle);
+      await api("Reviews.RunTests", ids, p.file, line + 1, needle, view.version);
+      if (state.view !== view) return;
       closeModal();
       toast("Sent to the agent.");
     } catch (e) {
@@ -2057,43 +2127,52 @@ async function openTests() {
 // testsAtLine caches which tests run a line, for the hint, the tooltip and the picker.
 const atCache = { view: null, map: new Map() };
 async function testsAtLine(station, part, line) {
-  if (atCache.view !== state.view) {
-    atCache.view = state.view;
+  const view = state.view;
+  if (atCache.view !== view) {
+    atCache.view = view;
     atCache.map = new Map();
   }
   const k = `${station}|${part}|${line}`;
-  if (!atCache.map.has(k)) {
+  const cache = atCache.map;
+  if (!cache.has(k)) {
     try {
-      atCache.map.set(k, await api("Reviews.TestsAt", station, part, line));
+      cache.set(k, await api("Reviews.TestsAt", station, part, line, view.version));
     } catch (e) {
-      toast(errText(e), true);
+      if (state.view === view) toast(errText(e), true);
       return [];
     }
   }
-  return atCache.map.get(k);
+  return state.view === view ? cache.get(k) : [];
 }
 
 async function runFor(s, pi) {
-  if (!state.view.coverage) return toast("No coverage yet: ask the agent to run margin coverage.");
+  const view = state.view;
+  if (!view.coverage) return toast("No coverage yet: ask the agent to run margin coverage.");
   let ids;
   try {
-    ids = await api("Reviews.TestsFor", s.id, pi);
+    ids = await api("Reviews.TestsFor", s.id, pi, view.version);
   } catch (e) {
-    return toast(errText(e), true);
+    if (state.view === view) toast(errText(e), true);
+    return;
   }
+  if (state.view !== view) return;
   const what = pi < 0 ? `stop ${s.title ?? s.id}` : `${base(partData(s, pi).file)} ${partData(s, pi).label ?? ""}`.trim();
-  runTests(ids, what);
+  runTests(ids, what, view);
 }
 
 // runHere runs the tests of the selected line, or of the stop when no line is selected.
 async function runHere() {
   const s = cur();
+  const view = state.view, sel = state.sel;
   if (s?.kind !== "code") return toast("Go to a stop with code first.");
   if (!state.view.coverage) return toast("No coverage yet: ask the agent to run margin coverage.");
   if (!state.sel || state.sel.station !== s.id) return runFor(s, -1);
   const r = partData(s, state.sel.part)?.rows.find((x) => x.n - 1 === state.sel.line);
   if (r?.cov !== "run") return toast(`No test runs line ${state.sel.line + 1}; ▶ Tests runs the whole stop's.`);
-  runTests([...(await testsAtLine(s.id, state.sel.part, state.sel.line))], `${base(partData(s, state.sel.part).file)}:${state.sel.line + 1}`);
+  const ids = await testsAtLine(s.id, sel.part, sel.line);
+  if (state.view === view && state.sel === sel && ids.length) {
+    runTests(ids, `${base(partData(s, sel.part).file)}:${sel.line + 1}`, view);
+  }
 }
 
 // covHint puts the selected line's actions right under it, with the tests that run it, like the
@@ -2144,7 +2223,7 @@ function hintContext() {
   if (!r || (c && c.station === sel.station && c.part === sel.part && c.line === sel.line)) return null;
   const b = block();
   const many = b && b.end > b.line ? b : null;
-  const key = `${s.id}|${sel.part}|${sel.line}|${many ? many.line + "-" + many.end : ""}|${r.cov ?? ""}|${[...results.values()].join()}`;
+  const key = `${state.view.version}|${s.id}|${sel.part}|${sel.line}|${many ? many.line + "-" + many.end : ""}|${r.cov ?? ""}|${[...results.values()].join()}`;
   return { s, sel, rowEl, p, r, many, key };
 }
 
@@ -2199,6 +2278,7 @@ function buildHint(c, ids) {
 
 async function startTry(again, range) {
   const s = cur();
+  const view = state.view;
   const from = again?.station ? again : range ?? block();
   if (s?.kind !== "code" || !from || from.station !== s.id) return needLine("try a change to it");
   if (state.compose?.text) return toast("Finish or cancel what you are writing first.");
@@ -2207,16 +2287,17 @@ async function startTry(again, range) {
   const end = Math.max(from.line, from.end ?? from.line);
   let text;
   try {
-    text = await api("Reviews.LinesText", s.id, from.part, from.line, end);
+    text = await api("Reviews.LinesText", s.id, from.part, from.line, end, view.version);
   } catch (e) {
     return toast(errText(e), true);
   }
   const lineTests = await blockTests(s, from.part, from.line, end);
+  if (state.view !== view || cur() !== s) return;
   state.sel = { station: s.id, part: from.part, line: end };
   state.block = null;
   state.compose = null;
   endTry();
-  state.trying = { station: s.id, part: from.part, line: from.line, end, old: text, text: again?.text ?? text, lineTests, scope: lineTests.length ? "line" : "stop", compare: again?.compare ?? true };
+  state.trying = { view, station: s.id, part: from.part, line: from.line, end, old: text, text: again?.text ?? text, lineTests, scope: lineTests.length ? "line" : "stop", compare: again?.compare ?? true };
   renderKeepScroll();
   focusTry();
 }
@@ -2237,10 +2318,11 @@ async function growTry(dir) {
   if (at < 0) return toast("That is the first line of the file.");
   let t;
   try {
-    t = await api("Reviews.LinesText", s.id, tr.part, at, at);
+    t = await api("Reviews.LinesText", s.id, tr.part, at, at, tr.view.version);
   } catch (e) {
     return toast(errText(e), true);
   }
+  if (state.trying !== tr || state.view !== tr.view) return;
   const edited = tr.text !== tr.old;
   tr.old = dir < 0 ? t + "\n" + tr.old : tr.old + "\n" + t;
   if (!edited) tr.text = tr.old;
@@ -2254,13 +2336,6 @@ async function growTry(dir) {
   focusTry();
 }
 
-// tryPart tries a change to the part's changed lines, first to last.
-function tryPart(s, pi) {
-  const p = partData(s, pi);
-  const ch = (p.rows ?? []).filter((r) => r.n && (r.k === "add" || r.k === "chg")).map((r) => r.n - 1);
-  if (!ch.length) return toast("No changed line in this part to try.");
-  startTry(null, { station: s.id, part: pi, line: Math.min(...ch), end: Math.max(...ch) });
-}
 testHooks.edit = (req) => {
   const i = state.view.stations.findIndex((x) => x.id === req.station);
   if (i < 0) return toast("That stop is gone.");
@@ -2306,17 +2381,18 @@ function tryBox(s, p) {
   };
   const go = async () => {
     if (tr.text === tr.old) return toast("Change something first.");
+    if (state.view !== tr.view) return toast("The review changed. Reopen the editor before running.");
     let tests = [];
     if (tr.scope === "stop") {
       try {
-        tests = await api("Reviews.TestsFor", s.id, -1);
+        tests = await api("Reviews.TestsFor", s.id, -1, tr.view.version);
       } catch (e) {
         return toast(errText(e), true);
       }
       if (!tests.length) return toast("No test runs this stop's changes.");
     }
-    const req = { station: tr.station, part: tr.part, line: tr.line, end: tr.end, text: tr.text, tests, compare: tr.compare };
-    if (await tryChange(req, `${base(p.file)}:${tr.line + 1}${many ? "–" + (tr.end + 1) : ""}`)) cancel();
+    const req = { station: tr.station, part: tr.part, line: tr.line, end: tr.end, old: tr.old, text: tr.text, tests, compare: tr.compare };
+    if (await tryChange(req, `${base(p.file)}:${tr.line + 1}${many ? "–" + (tr.end + 1) : ""}`, tr.view) && state.trying === tr) cancel();
   };
   tr.go = go;
   tr.cancel = cancel;
@@ -2635,7 +2711,7 @@ export function reviewKey(e) {
     F: cycleFilter,
     d: () => toggle("showGhosts"),
     s: () => toggle("split"),
-    z: () => toggle("unfold"),
+    z: () => guided() ? toast("Folding is available in Whole stop view.") : toggle("unfold"),
     "/": () => document.querySelector("#search")?.focus(),
     Escape: () => {
       if (state.query) return endSearch();
