@@ -1,5 +1,5 @@
 import { Events } from "/wails/runtime.js";
-import { api, $, state, hooks, toast, errText, tail, closeModal, applyTheme, setThemeMode, followsSystem } from "./core.js";
+import { api, $, state, hooks, toast, errText, tail, openModal, closeModal, applyTheme, setThemeMode, followsSystem } from "./core.js";
 import { openReview, openReviewFile, reviewKey, renderReview, sendComments, sendFixes } from "./review.js";
 import { loadWorkspace, loadRecent, renderSide, addFolder, selectWorktree, homeKey, backToReview, syncSideButtons, openSwitcher, switcherOpen, openSettings, navState } from "./nav.js";
 
@@ -45,41 +45,127 @@ function setAgentLive(live) {
   const was = state.agentLive;
   if (was !== live) loadRecent();
   state.agentLive = live;
-  if (was !== live && state.view) renderReview();
+  if (was !== live && state.view) {
+    const scroll = $("#station").scrollTop;
+    renderReview();
+    $("#station").scrollTop = scroll;
+  }
+  const saved = state.opened?.agent;
+  const name = saved?.name || "Agent";
   $("#agent-dot").classList.toggle("live", live);
-  $("#agent-label").textContent = live ? `Agent · ${tail(state.opened?.repo ?? "", 1)}` : "Agent not running";
-  $("#agent-btn").textContent = live ? "Stop agent" : "Start agent";
+  $("#agent-label").textContent = live ? `${name} · ${tail(state.opened?.repo ?? "", 1)}` :
+    saved?.failed ? `Could not resume ${name}` : `${name} not running`;
+  $("#agent-btn").textContent = live ? "Stop agent" : saved?.exact && !saved.failed ? "Resume agent" :
+    saved?.saved ? "Continue from saved review" : "Start agent";
+  $("#agent-link").classList.toggle("hidden", live || !saved?.canLink || (saved.exact && !saved.failed) || !!state.opened?.created);
 }
 
-async function attachAgent() {
-  term.reset();
-  const live = await api("Agents.Running", state.opened.path);
+let agentStatusRequest = 0;
+async function refreshAgent(opened) {
+  if (state.opened !== opened) return null;
+  const request = ++agentStatusRequest;
+  const [live, saved] = await Promise.all([
+    api("Agents.Running", opened.path),
+    api("Agents.ResumeStatus", opened.path, opened.repo),
+  ]);
+  if (state.opened !== opened || request !== agentStatusRequest) return null;
+  opened.agent = saved ?? {};
   setAgentLive(live);
-  setAgentCollapsed(!live);
-  if (live) {
-    const buf = await api("Agents.Start", state.opened.path, state.opened.repo, false, term.cols, term.rows);
-    if (buf) term.write(b64(buf));
-  } else {
-    term.write("\x1b[2mPress Start agent: it reads the change, shapes the tour and writes notes here as it goes.\x1b[0m\r\n");
+  return live;
+}
+
+async function attachAgent(opened, restore) {
+  term.reset();
+  try {
+    const live = await refreshAgent(opened);
+    if (live === null) return;
+    setAgentCollapsed(!live);
+    if (live) {
+      const buf = await api("Agents.Scrollback", opened.path);
+      if (buf && state.opened === opened) term.write(b64(buf));
+    } else if (restore && opened.agent.auto && !opened.shared) {
+      await startAgent(opened, "Resume", false);
+    } else {
+      const action = $("#agent-btn").textContent;
+      term.writeln(`\x1b[2mPress ${action} above.\x1b[0m`);
+    }
+  } catch (e) {
+    if (state.opened === opened) toast(errText(e), true);
+  } finally {
+    if (state.opened === opened) $("#agent-btn").disabled = !opened.agent;
   }
 }
 
 async function toggleAgent() {
-  if (!state.opened) return;
+  const opened = state.opened;
+  if (!opened?.agent || state.view?.path !== opened.path) return;
   if (state.agentLive) {
-    await api("Agents.Stop", state.opened.path);
+    try {
+      await api("Agents.Stop", opened.path);
+    } catch (e) {
+      toast(errText(e), true);
+    }
     return;
   }
+  const saved = opened.agent;
+  const action = saved?.exact && !saved.failed ? "Resume" : saved?.saved ? "Continue" : "Start";
+  await startAgent(opened, action, true);
+}
+
+async function startAgent(opened, action, focus) {
+  const button = $("#agent-btn");
+  button.disabled = true;
+  // A launch changes the process status while the terminal may still receive earlier events.
+  ++agentStatusRequest;
   setAgentCollapsed(false);
   term.reset();
   try {
-    await api("Agents.Start", state.opened.path, state.opened.repo, state.opened.created, term.cols, term.rows);
-    state.opened.created = false;
-    setAgentLive(true);
-    term.focus();
+    const args = [opened.path, opened.repo];
+    if (action === "Start") args.push(opened.created);
+    const buf = await api("Agents." + action, ...args, term.cols, term.rows);
+    if (state.opened !== opened) return;
+    if (buf) term.write(b64(buf));
+    opened.created = false;
+    if (await refreshAgent(opened) && focus) term.focus();
   } catch (e) {
-    toast(errText(e), true);
+    if (state.opened === opened) {
+      await refreshAgent(opened).catch(() => {});
+      toast(errText(e), true);
+    }
+  } finally {
+    if (state.opened === opened) button.disabled = false;
   }
+}
+
+function linkAgent() {
+  const opened = state.opened;
+  if (!opened || !opened.agent?.canLink) return;
+  const form = document.createElement("form");
+  form.className = "settings";
+  form.innerHTML = `<section>
+    <label>Conversation ID for this review <input name="id" required autocomplete="off" spellcheck="false"></label>
+    <p class="error hidden" role="alert"></p>
+    <button class="primary" type="submit">Link and resume</button>
+  </section>`;
+  const modal = openModal("Link saved conversation", form);
+  const input = form.elements.id;
+  input.focus();
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    if (state.opened !== opened) return;
+    const submit = form.querySelector("button");
+    submit.disabled = true;
+    try {
+      await api("Agents.LinkConversation", opened.path, opened.repo, input.value);
+      if (modal.isConnected) closeModal();
+      if (state.opened === opened) await startAgent(opened, "Resume", true);
+    } catch (err) {
+      const message = form.querySelector("[role=alert]");
+      message.textContent = errText(err);
+      message.classList.remove("hidden");
+      submit.disabled = false;
+    }
+  };
 }
 
 Events.On("agent:data", (ev) => {
@@ -87,10 +173,16 @@ Events.On("agent:data", (ev) => {
   if (d && state.opened && d.review === state.opened.path) term.write(b64(d.data));
 });
 
-Events.On("agent:exit", (ev) => {
-  if (state.opened && ev.data === state.opened.path) {
-    setAgentLive(false);
-    term.write("\r\n\x1b[2m[agent exited]\x1b[0m\r\n");
+Events.On("agent:exit", async (ev) => {
+  const opened = state.opened;
+  if (!opened || ev.data !== opened.path) return;
+  try {
+    const live = await refreshAgent(opened);
+    if (state.opened !== opened || live !== false) return;
+    term.writeln(opened.agent?.failed ? "\r\nCould not reopen the saved conversation. You can continue from the saved review." :
+      "\r\n\x1b[2m[agent exited]\x1b[0m");
+  } catch (e) {
+    if (state.opened === opened) toast(errText(e), true);
   }
 });
 
@@ -106,7 +198,11 @@ function togglePicker() {
   fitTerminal();
 }
 
-function showReviewer() {
+function showReviewer(loading = false) {
+  if (loading) {
+    $("#agent-btn").disabled = true;
+    $("#agent-link").classList.add("hidden");
+  }
   $("#welcome").classList.add("hidden");
   $("#home-pane").classList.add("hidden");
   $("#reviewer").classList.remove("hidden");
@@ -223,6 +319,7 @@ $("#crumb").onclick = crumbBack;
 $("#back-review").onclick = backToReview;
 $("#wt-refresh").onclick = () => state.worktree && selectWorktree(state.worktree, state.worktree.repo);
 $("#agent-btn").onclick = toggleAgent;
+$("#agent-link").onclick = linkAgent;
 $("#send-btn").onclick = sendComments;
 $("#fix-btn").onclick = sendFixes;
 $("#agent-submit").onchange = (e) => api("Agents.SetSubmit", e.target.checked);
@@ -264,7 +361,18 @@ api("Reviews.Recovered").then(
 (async () => {
   const init = await api("Workspace.Initial");
   await loadWorkspace();
-  if (init?.review) return openReviewFile(init.review);
+  if (init?.review) {
+    const opened = await openReviewFile(init.review, init.restore);
+    if (!opened && init.restore) {
+      state.opened = null;
+      $("#reviewer").classList.add("hidden");
+      $("#welcome").classList.remove("hidden");
+      $("#workspace").classList.remove("focus");
+      syncSideButtons();
+      toast("Could not reopen the last review. Open a review from the sidebar.", true);
+    }
+    return;
+  }
   if (!init?.root) {
     if (navState().folders.length) $("#workspace").classList.remove("focus");
     return;

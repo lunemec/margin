@@ -21,12 +21,20 @@ const partData = (s, pi) => state.parts[partKey(s, pi)] ?? s.parts[pi];
 
 // Loading
 
-export async function openReviewFile(path) {
-  return openReview("", "", false, path);
+export function openReviewFile(path, restore = false) {
+  return openReview("", "", false, path, restore);
 }
 
-export async function openReview(dir, arg, fresh = false, file = "") {
-  hooks.showReviewer();
+let openingReview = Promise.resolve();
+export function openReview(dir, arg, fresh = false, file = "", restore = false) {
+  const opened = openingReview.then(() => loadReview(dir, arg, fresh, file, restore));
+  openingReview = opened.catch(() => {});
+  return opened;
+}
+
+async function loadReview(dir, arg, fresh, file, restore) {
+  await flushReadingPosition();
+  hooks.showReviewer(true);
   $("#station").innerHTML = `<div class="spinner">Preparing the review…</div>`;
   let opened;
   try {
@@ -35,8 +43,10 @@ export async function openReview(dir, arg, fresh = false, file = "") {
     $("#station").innerHTML = `<div class="spinner error">${esc(errText(e))}</div>`;
     return;
   }
-  const same = state.opened?.path === opened.path;
+  const same = !fresh && state.opened?.path === opened.path;
   state.opened = { ...opened, arg, file };
+  const active = state.opened;
+  active.restoringPosition = true;
   if (!same) {
     resetTests();
     endTry();
@@ -46,17 +56,98 @@ export async function openReview(dir, arg, fresh = false, file = "") {
     state.fresh = new Set();
   }
   hooks.reviewOpened?.();
+  const position = same || opened.created ? null : await api("Reviews.ReadingPosition", opened.path).catch(() => null);
   await reload(!same);
-  if (!same && state.view) {
+  if (state.view?.path !== opened.path) {
+    active.restoringPosition = false;
+    return false;
+  }
+  if (!same && !restoreReadingPosition(position)) {
     // Like the terminal viewer: the first code stop, unless a guided walk starts fresh at the overview.
-    const fresh = guided() && !reader().visited.length;
-    if (!fresh && state.view.stations.length > 1) goStation(1);
+    const atOverview = guided() && !reader().visited.length;
+    if (!atOverview && state.view.stations.length > 1) goStation(1);
   }
   if (opened.shared) toast("This review is also open in a terminal viewer: the agent's margin goto and where drive that one, not this window.", true);
   $("#workspace").classList.add("focus");
   hooks.fitTerminal();
-  await hooks.attachAgent?.();
+  active.restoringPosition = false;
+  queueReadingPosition(0, true);
+  await flushReadingPosition();
+  await hooks.attachAgent?.(active, restore);
+  return true;
 }
+
+function stepPosition(s, step) {
+  if (!step) return null;
+  const item = step.subs?.[0] ?? step;
+  const part = s.parts[item.part];
+  return { kind: step.kind, file: part?.file ?? "", side: part?.base ? "base" : "", from: item.from, to: item.to };
+}
+
+function restoreReadingPosition(position) {
+  if (!position) return false;
+  const index = state.view.stations.findIndex((station) => station.id === position.station);
+  if (index < 0) {
+    goStation(0);
+    return true;
+  }
+  const s = state.view.stations[index];
+  const saved = position.step;
+  const step = saved && guided() ? (s.steps ?? []).findIndex((item) => {
+    const key = stepPosition(s, item);
+    return key.kind === saved.kind && key.file === (saved.file ?? "") && key.side === (saved.side ?? "") &&
+      key.from === saved.from && key.to === saved.to;
+  }) : 0;
+  goStation(index, -1, Math.max(0, step));
+  if (step >= 0) $("#station").scrollTop = position.scroll;
+  return true;
+}
+
+let readingTimer, pendingPosition, savingPosition;
+function queueReadingPosition(delay = 0, remember = false) {
+  const opened = state.opened, station = cur();
+  if (!opened || opened.restoringPosition || state.view?.path !== opened.path || !station) return;
+  const position = {
+    station: station.id,
+    step: walking() ? stepPosition(station, station.steps?.[state.step]) : null,
+    scroll: Math.round($("#station").scrollTop),
+  };
+  const key = JSON.stringify(position);
+  if (!remember && key === opened.savedPosition && pendingPosition?.opened !== opened) return;
+  const rememberReview = remember || (pendingPosition?.opened === opened && pendingPosition.remember);
+  pendingPosition = { opened, position, key, remember: !!rememberReview };
+  clearTimeout(readingTimer);
+  if (delay) readingTimer = setTimeout(flushReadingPosition, delay);
+  else flushReadingPosition();
+}
+
+function flushReadingPosition() {
+  clearTimeout(readingTimer);
+  if (!pendingPosition || savingPosition) return savingPosition;
+  savingPosition = (async () => {
+    while (pendingPosition) {
+      const { opened, position, key, remember } = pendingPosition;
+      pendingPosition = null;
+      if (state.opened !== opened || (!remember && key === opened.savedPosition)) continue;
+      try {
+        await api("Reviews.SaveReadingPosition", opened.path, position, remember);
+        opened.savedPosition = key;
+      } catch (e) {
+        if (state.opened === opened && !opened.positionError) {
+          opened.positionError = true;
+          toast("Could not save the reading position: " + errText(e), true);
+        }
+      }
+    }
+  })().finally(() => {
+    savingPosition = null;
+    if (pendingPosition) return flushReadingPosition();
+  });
+  return savingPosition;
+}
+
+$("#station").addEventListener("scroll", () => queueReadingPosition(200), { passive: true });
+window.addEventListener("pagehide", flushReadingPosition);
 
 async function reload(top = false) {
   try {
@@ -392,6 +483,7 @@ export function goStation(i, noteIdx = -1, step = 0) {
   if (noteIdx >= 0) focusNote(noteIdx);
   else if (walking()) enterStep();
   refreshParts();
+  queueReadingPosition();
 }
 
 function renderStation() {
@@ -1264,6 +1356,7 @@ function enterStep() {
     selectRow(s.id, +first.dataset.part, +first.dataset.line, false);
     first.scrollIntoView({ block: "nearest" });
   }
+  queueReadingPosition();
 }
 
 function toggleGuide() {

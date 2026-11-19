@@ -202,6 +202,8 @@ func cmdBrief(args []string) error {
 	fs := flag.NewFlagSet("brief", flag.ContinueOnError)
 	reviewFlag := fs.String("review", "", "")
 	isNew := fs.Bool("new", false, "")
+	continued := fs.Bool("continue", false, "")
+	guiAgent := fs.String("gui-agent", "", "")
 	if _, err := parseArgs(fs, args); err != nil {
 		return err
 	}
@@ -212,6 +214,15 @@ func cmdBrief(args []string) error {
 	r, err := review.Load(path)
 	if err != nil {
 		return err
+	}
+	if id := os.Getenv("CODEX_THREAD_ID"); *guiAgent != "" && id != "" {
+		control.RegisterAgent(*guiAgent, id, path)
+	}
+	if *continued {
+		fmt.Printf("Continue this existing Margin review. Read %q and, if present, reader state %q, answers %q and coverage %q. "+
+			"Use these files as context. Wait for the reader's next instruction before reviewing again, running tests or editing files.\n",
+			path, review.StatePath(path), review.CommentsPath(path), review.CoveragePath(path))
+		return nil
 	}
 	fmt.Println(agentPrompt(r, target.LocationOf(path), *isNew))
 	return nil

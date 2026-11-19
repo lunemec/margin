@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"log"
 	"fmt"
 	"strings"
 	"sync"
@@ -244,6 +245,16 @@ func (r *Reviews) Open(dir, arg string, fresh bool) (*Opened, error) {
 	r.mu.Lock()
 	r.path = loc.Path
 	r.mu.Unlock()
+	if created {
+		if r.agents != nil {
+			if err := r.agents.Stop(loc.Path); err != nil {
+				log.Printf("stopping agent for a fresh review: %v", err)
+			}
+		}
+		if err := clearReviewResume(loc.Path); err != nil {
+			log.Printf("clearing resume state for a fresh review: %v", err)
+		}
+	}
 	openedReview(loc.Path)
 	return &Opened{Path: loc.Path, Repo: t.Repo, Label: t.Label(), Created: created, Added: added, Notes: loc.Notes, Shared: r.serve(loc.Path)}, nil
 }
