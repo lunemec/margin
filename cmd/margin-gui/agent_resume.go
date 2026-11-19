@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -24,6 +25,7 @@ type AgentResumeStatus struct {
 
 var uuidPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 var opencodeIDPattern = regexp.MustCompile(`^ses_[A-Za-z0-9_-]{1,100}$`)
+var errAutoResumeDisabled = errors.New("automatic resume is disabled for this review")
 
 func agentPreset(command string) string {
 	fields := strings.Fields(command)
@@ -149,15 +151,15 @@ func loadAgentReview(path, repo string) (*review.Review, error) {
 	return rv, nil
 }
 
-func (a *Agents) Resume(path, repo string, cols, rows int) (string, error) {
-	return a.restore(path, repo, cols, rows, false)
+func (a *Agents) Resume(path, repo string, automatic bool, cols, rows int) (string, error) {
+	return a.restore(path, repo, automatic, false, cols, rows)
 }
 
 func (a *Agents) Continue(path, repo string, cols, rows int) (string, error) {
-	return a.restore(path, repo, cols, rows, true)
+	return a.restore(path, repo, false, true, cols, rows)
 }
 
-func (a *Agents) restore(path, repo string, cols, rows int, continued bool) (string, error) {
+func (a *Agents) restore(path, repo string, automatic, continued bool, cols, rows int) (string, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if s := a.sessions[path]; s != nil && !s.done {
@@ -167,21 +169,24 @@ func (a *Agents) restore(path, repo string, cols, rows int, continued bool) (str
 	if err != nil {
 		return "", err
 	}
-	saved := readReviewResume(path).Agent
-	if saved == nil || strings.TrimSpace(saved.Command) == "" || saved.Repo != resumeIdentity(rv.RepoDir()) {
-		return "", errors.New("no saved agent for this review")
-	}
-	if continued {
-		return "", a.launchNew(path, repo, saved.Command, false, true, cols, rows)
-	}
-	args, err := nativeResumeArgs(*saved)
-	if err != nil {
-		return "", err
-	}
-	previousRun := saved.Run
-	saved.Auto, saved.Failed, saved.Run = true, false, rand.Text()
-	if err := a.launch(path, repo, args, *saved, nil, true, cols, rows); err != nil {
-		if !errors.Is(err, errAgentInUse) {
+	err = startLeasedAgent(path, func(lease *os.File) error {
+		saved := readReviewResume(path).Agent
+		if automatic && (saved == nil || !saved.Auto || saved.Failed) {
+			return errAutoResumeDisabled
+		}
+		if saved == nil || strings.TrimSpace(saved.Command) == "" || saved.Repo != resumeIdentity(rv.RepoDir()) {
+			return errors.New("no saved agent for this review")
+		}
+		if continued {
+			return a.launchNew(lease, path, repo, saved.Command, false, true, cols, rows)
+		}
+		args, err := nativeResumeArgs(*saved)
+		if err != nil {
+			return err
+		}
+		previousRun := saved.Run
+		saved.Auto, saved.Failed, saved.Run = true, false, rand.Text()
+		if err := a.launch(lease, path, repo, args, *saved, nil, true, cols, rows); err != nil {
 			_ = updateReviewResume(path, func(record *reviewResume) bool {
 				if record.Agent == nil || record.Agent.Run != previousRun {
 					return false
@@ -189,10 +194,14 @@ func (a *Agents) restore(path, repo string, cols, rows int, continued bool) (str
 				record.Agent.Auto, record.Agent.Failed = false, true
 				return true
 			})
+			return err
 		}
-		return "", err
+		return nil
+	})
+	if errors.Is(err, errAutoResumeDisabled) {
+		return "", nil
 	}
-	return "", nil
+	return "", err
 }
 
 // A dedicated socket stays reachable while the reader switches to another review.

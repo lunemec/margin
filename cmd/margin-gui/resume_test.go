@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
-	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -31,9 +30,6 @@ func TestReadingPositionSurvivesRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := &Reviews{path: path}
-	if _, err := r.Current(); err != nil {
-		t.Fatal(err)
-	}
 	position := ReadingPosition{Station: "reserve", Step: &ReadingStep{Kind: "change", From: 2, To: 4}, Scroll: 125}
 	if err := r.SaveReadingPosition(path, position, true); err != nil {
 		t.Fatal(err)
@@ -50,12 +46,13 @@ func TestReadingPositionSurvivesRestart(t *testing.T) {
 	if saved := next.ReadingPosition(path); !reflect.DeepEqual(saved, &position) {
 		t.Fatalf("restored position = %+v", saved)
 	}
-	view, err := next.Current()
+	reader, err = state.Load(review.StatePath(path))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Contains(view.Reader.Visited, "reserve") || view.Reader.Verdicts["reserve"] != "good" || len(view.Reader.Comments) != 1 {
-		t.Fatalf("reader state did not survive restart: %+v", view.Reader)
+	if !reader.Visited["reserve"] || reader.Verdicts["reserve"] != "good" ||
+		len(reader.Questions) != 1 || !reader.Questions[0].Draft {
+		t.Fatalf("reader state did not survive restart: %+v", reader)
 	}
 	for _, file := range []string{resumePath(path), filepath.Join(guiStateDir(), "last-review.json")} {
 		info, err := os.Stat(file)
@@ -96,6 +93,9 @@ func TestClaudeResumeUsesSavedAgentAndStopDisablesAutomaticResume(t *testing.T) 
 		t.Fatalf("new Claude launch args = %q", args)
 	}
 	id := args[1]
+	if err := first.sessions[path].pty.SetReadDeadline(time.Time{}); err != nil {
+		t.Fatalf("agent PTY must allow a blocked read to be interrupted: %v", err)
+	}
 	if _, err := (&Agents{}).Start(path, repo, false, 80, 24); !errors.Is(err, errAgentInUse) {
 		t.Fatalf("second process could acquire active review: %v", err)
 	}
@@ -112,7 +112,7 @@ func TestClaudeResumeUsesSavedAgentAndStopDisablesAutomaticResume(t *testing.T) 
 	if saved := next.ResumeStatus(path, repo); !saved.Auto || !saved.Exact || saved.Name != "claude" {
 		t.Fatalf("saved agent = %+v", saved)
 	}
-	if _, err := next.Resume(path, repo, 80, 24); err != nil {
+	if _, err := next.Resume(path, repo, true, 80, 24); err != nil {
 		t.Fatal(err)
 	}
 	if got := waitAgentArgs(t, log); !reflect.DeepEqual(got, []string{"--resume", id}) {
@@ -125,6 +125,10 @@ func TestClaudeResumeUsesSavedAgentAndStopDisablesAutomaticResume(t *testing.T) 
 	if saved := (&Agents{}).ResumeStatus(path, repo); saved.Auto || !saved.Exact {
 		t.Fatalf("stopped agent = %+v", saved)
 	}
+	stopped := &Agents{}
+	if _, err := stopped.Resume(path, repo, true, 80, 24); err != nil || stopped.Running(path) {
+		t.Fatalf("automatic restore started a stopped agent: %v", err)
+	}
 
 	// A provider can reject a conversation after its process starts successfully.
 	if err := os.Remove(log); err != nil {
@@ -133,7 +137,7 @@ func TestClaudeResumeUsesSavedAgentAndStopDisablesAutomaticResume(t *testing.T) 
 	t.Setenv("MARGIN_TEST_AGENT_FAIL", "1")
 	last := &Agents{}
 	t.Cleanup(func() { _ = last.ServiceShutdown() })
-	if _, err := last.Resume(path, repo, 80, 24); err != nil {
+	if _, err := last.Resume(path, repo, false, 80, 24); err != nil {
 		t.Fatal(err)
 	}
 	waitAgentExit(t, last.sessions[path])
@@ -162,7 +166,14 @@ func TestRegistersOnlyTheCodexReviewThatStartedTheAgent(t *testing.T) {
 	t.Cleanup(func() { _ = os.RemoveAll(runtime) })
 	t.Setenv("XDG_RUNTIME_DIR", runtime)
 	path, repo := resumeFixture(t)
-	other, _ := resumeFixture(t)
+	other := filepath.Join(filepath.Dir(path), "other.review.yaml")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(other, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	log, codex := testAgent(t, "codex")
 	t.Setenv("MARGIN_AGENT", codex)
 	a := &Agents{}

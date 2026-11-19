@@ -16,6 +16,7 @@ import (
 
 	"github.com/creack/pty"
 	"github.com/wailsapp/wails/v3/pkg/application"
+	"golang.org/x/sys/unix"
 
 	"github.com/redrick/margin/internal/cli"
 	"github.com/redrick/margin/internal/config"
@@ -74,7 +75,9 @@ func (a *Agents) Start(reviewPath, repo string, created bool, cols, rows int) (s
 	if _, err := loadAgentReview(reviewPath, repo); err != nil {
 		return "", err
 	}
-	return "", a.launchNew(reviewPath, repo, config.Load().Agent, created, false, cols, rows)
+	return "", startLeasedAgent(reviewPath, func(lease *os.File) error {
+		return a.launchNew(lease, reviewPath, repo, config.Load().Agent, created, false, cols, rows)
+	})
 }
 
 func (s *session) replay() string {
@@ -83,7 +86,7 @@ func (s *session) replay() string {
 	return base64.StdEncoding.EncodeToString(s.buf)
 }
 
-func (a *Agents) launchNew(path, repo, command string, created, continued bool, cols, rows int) error {
+func (a *Agents) launchNew(lease *os.File, path, repo, command string, created, continued bool, cols, rows int) error {
 	saved := savedAgent{Command: command, Repo: resumeIdentity(repo), Run: rand.Text(), Auto: true}
 	var registration *control.Server
 	var endpoint string
@@ -100,7 +103,7 @@ func (a *Agents) launchNew(path, repo, command string, created, continued bool, 
 		saved.ID = newClaudeID()
 		argv = append([]string{argv[0], "--session-id", saved.ID}, argv[1:]...)
 	}
-	if err := a.launch(path, repo, argv, saved, registration, false, cols, rows); err != nil {
+	if err := a.launch(lease, path, repo, argv, saved, registration, false, cols, rows); err != nil {
 		if registration != nil {
 			registration.Close()
 		}
@@ -110,23 +113,18 @@ func (a *Agents) launchNew(path, repo, command string, created, continued bool, 
 }
 
 // launch runs with a.mu held so registration cannot race the saved launch record.
-func (a *Agents) launch(path, repo string, argv []string, saved savedAgent, registration *control.Server, resuming bool, cols, rows int) error {
+func (a *Agents) launch(lease *os.File, path, repo string, argv []string, saved savedAgent, registration *control.Server, resuming bool, cols, rows int) error {
 	if a.closing {
 		return errors.New("Margin is closing")
 	}
 	if _, err := exec.LookPath(argv[0]); err != nil {
 		return errors.New(argv[0] + " is not available; check the agent in Settings")
 	}
-	lease, err := leaseAgent(path)
-	if err != nil {
-		return err
-	}
 	cmd := exec.Command(argv[0], argv[1:]...)
 	cmd.Dir = repo
 	cmd.Env = append(cli.AgentEnv(cleanEnv()), "TERM=xterm-256color", "COLORTERM=truecolor", "MARGIN_REVIEW="+path)
-	f, err := pty.StartWithSize(cmd, &pty.Winsize{Cols: uint16(max(cols, 20)), Rows: uint16(max(rows, 5))})
+	f, err := startAgentPTY(cmd, &pty.Winsize{Cols: uint16(max(cols, 20)), Rows: uint16(max(rows, 5))})
 	if err != nil {
-		lease.Close()
 		return err
 	}
 	s := &session{
@@ -140,7 +138,6 @@ func (a *Agents) launch(path, repo string, argv []string, saved savedAgent, regi
 		s.signal(syscall.SIGKILL)
 		f.Close()
 		_ = cmd.Wait()
-		lease.Close()
 		return fmt.Errorf("save agent session: %w", err)
 	}
 	if a.sessions == nil {
@@ -149,6 +146,26 @@ func (a *Agents) launch(path, repo string, argv []string, saved savedAgent, regi
 	a.sessions[path] = s
 	go a.pump(path, s)
 	return nil
+}
+
+func startAgentPTY(cmd *exec.Cmd, size *pty.Winsize) (*os.File, error) {
+	master, err := pty.StartWithSize(cmd, size)
+	if err != nil {
+		return nil, err
+	}
+	defer master.Close()
+	// A nonblocking descriptor lets Close interrupt a read even if a descendant still has the slave open.
+	fd, err := unix.FcntlInt(master.Fd(), unix.F_DUPFD_CLOEXEC, 0)
+	if err == nil {
+		err = unix.SetNonblock(fd, true)
+		if err == nil {
+			return os.NewFile(uintptr(fd), master.Name()), nil
+		}
+		_ = unix.Close(fd)
+	}
+	_ = cmd.Process.Kill()
+	_ = cmd.Wait()
+	return nil, err
 }
 
 // Live lists the reviews whose agent is running.
@@ -227,6 +244,22 @@ func (a *Agents) Stop(reviewPath string) error {
 	return err
 }
 
+func (a *Agents) stopForReset(path string) error {
+	s := a.session(path)
+	if s == nil {
+		return nil
+	}
+	if err := a.Stop(path); err != nil {
+		return err
+	}
+	select {
+	case <-s.exited:
+		return nil
+	case <-time.After(2 * agentStopGrace):
+		return errors.New("the previous agent is still stopping")
+	}
+}
+
 func (a *Agents) ServiceShutdown() error {
 	a.mu.Lock()
 	a.closing = true
@@ -256,12 +289,7 @@ func (a *Agents) ServiceShutdown() error {
 }
 
 func (s *session) signal(signal syscall.Signal) {
-	select {
-	case <-s.exited:
-	default:
-		// The PTY starts the agent in its own session and process group.
-		_ = syscall.Kill(-s.cmd.Process.Pid, signal)
-	}
+	_ = s.cmd.Process.Signal(signal)
 }
 
 func (s *session) forceStop() {

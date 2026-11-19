@@ -174,6 +174,18 @@ func leaseAgent(path string) (*os.File, error) {
 	return f, nil
 }
 
+func startLeasedAgent(path string, launch func(*os.File) error) error {
+	lease, err := leaseAgent(path)
+	if err != nil {
+		return err
+	}
+	if err := launch(lease); err != nil {
+		lease.Close()
+		return err
+	}
+	return nil
+}
+
 func clearReviewResume(path string) error {
 	return lockResume(func() error {
 		if err := os.Remove(resumePath(path)); err != nil && !errors.Is(err, fs.ErrNotExist) {

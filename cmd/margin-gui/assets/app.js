@@ -71,6 +71,7 @@ async function refreshAgent(opened) {
   if (state.opened !== opened || request !== agentStatusRequest) return null;
   opened.agent = saved ?? {};
   setAgentLive(live);
+  $("#agent-btn").disabled = !!opened.launching;
   return live;
 }
 
@@ -84,7 +85,7 @@ async function attachAgent(opened, restore) {
       const buf = await api("Agents.Scrollback", opened.path);
       if (buf && state.opened === opened) term.write(b64(buf));
     } else if (restore && opened.agent.auto && !opened.shared) {
-      await startAgent(opened, "Resume", false);
+      await startAgent(opened, "Resume", true);
     } else {
       const action = $("#agent-btn").textContent;
       term.writeln(`\x1b[2mPress ${action} above.\x1b[0m`);
@@ -92,7 +93,7 @@ async function attachAgent(opened, restore) {
   } catch (e) {
     if (state.opened === opened) toast(errText(e), true);
   } finally {
-    if (state.opened === opened) $("#agent-btn").disabled = !opened.agent;
+    if (state.opened === opened && !opened.launching) $("#agent-btn").disabled = !opened.agent;
   }
 }
 
@@ -109,11 +110,13 @@ async function toggleAgent() {
   }
   const saved = opened.agent;
   const action = saved?.exact && !saved.failed ? "Resume" : saved?.saved ? "Continue" : "Start";
-  await startAgent(opened, action, true);
+  await startAgent(opened, action);
 }
 
-async function startAgent(opened, action, focus) {
+async function startAgent(opened, action, automatic = false) {
+  if (opened.launching) return;
   const button = $("#agent-btn");
+  opened.launching = true;
   button.disabled = true;
   // A launch changes the process status while the terminal may still receive earlier events.
   ++agentStatusRequest;
@@ -122,17 +125,19 @@ async function startAgent(opened, action, focus) {
   try {
     const args = [opened.path, opened.repo];
     if (action === "Start") args.push(opened.created);
+    if (action === "Resume") args.push(automatic);
     const buf = await api("Agents." + action, ...args, term.cols, term.rows);
     if (state.opened !== opened) return;
     if (buf) term.write(b64(buf));
     opened.created = false;
-    if (await refreshAgent(opened) && focus) term.focus();
+    if (await refreshAgent(opened) && !automatic) term.focus();
   } catch (e) {
     if (state.opened === opened) {
       await refreshAgent(opened).catch(() => {});
       toast(errText(e), true);
     }
   } finally {
+    opened.launching = false;
     if (state.opened === opened) button.disabled = false;
   }
 }
@@ -149,16 +154,25 @@ function linkAgent() {
   </section>`;
   const modal = openModal("Link saved conversation", form);
   const input = form.elements.id;
+  modal.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      closeModal();
+    }
+    e.stopPropagation();
+  });
   input.focus();
   form.onsubmit = async (e) => {
     e.preventDefault();
     if (state.opened !== opened) return;
     const submit = form.querySelector("button");
+    if (submit.disabled) return;
     submit.disabled = true;
     try {
       await api("Agents.LinkConversation", opened.path, opened.repo, input.value);
-      if (modal.isConnected) closeModal();
-      if (state.opened === opened) await startAgent(opened, "Resume", true);
+      if (!modal.isConnected || state.opened !== opened) return;
+      closeModal();
+      await startAgent(opened, "Resume");
     } catch (err) {
       const message = form.querySelector("[role=alert]");
       message.textContent = errText(err);
