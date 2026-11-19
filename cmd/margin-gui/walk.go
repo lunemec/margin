@@ -209,7 +209,7 @@ func (r *Reviews) Peek(file string, line int) (*PeekView, error) {
 	for i := from; i <= to; i++ {
 		row := Row{N: i + 1}
 		for _, s := range spans[i] {
-			row.Spans = append(row.Spans, Span{Text: s.Text, Color: s.Color, Light: s.Light, Bold: s.Bold, Italic: s.Italic})
+			row.Spans = append(row.Spans, spanOf(s))
 		}
 		pv.Rows = append(pv.Rows, row)
 	}

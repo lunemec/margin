@@ -234,7 +234,8 @@ in `~/.config/margin/config.yaml`.
 - **Note for the agent.** A line added to the agent's instructions, with `{project}`, `{topic}` and
   `{dir}` filled in, for example "File the review in the index of {project}."
 - **Appearance.** *System* (the default) follows the desktop's light or dark setting and switches
-  along with it; *Light* and *Dark* stay put. Code, the try editor and the agent terminal follow too.
+  along with it; *Light* and *Dark* stay put. Light uses a Catppuccin Latte palette for the GUI,
+  including the review, try editor and agent terminal.
 - **Agent skill.** Installs margin's skill for Claude Code or Codex, so an agent you start yourself
   knows margin too and can run a margin review when you ask for one.
 

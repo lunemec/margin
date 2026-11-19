@@ -34,7 +34,7 @@ const byExt = {
   toml: () => StreamLanguage.define(toml),
 };
 
-// github-dark or github, like the rest of the code in the window: the colours are in style.css.
+// Match the review colours defined in style.css.
 const style = HighlightStyle.define([
   { tag: [t.keyword, t.modifier, t.operatorKeyword, t.controlKeyword, t.definitionKeyword, t.moduleKeyword], color: "var(--cm-keyword)" },
   { tag: [t.string, t.special(t.string), t.regexp, t.character], color: "var(--cm-string)" },
@@ -54,13 +54,13 @@ const theme = EditorView.theme(
     ".cm-content": { fontFamily: "var(--mono)", caretColor: "var(--warn)", padding: "2px 0" },
     ".cm-scroller": { fontFamily: "var(--mono)", lineHeight: "1.5" },
     ".cm-gutters": { backgroundColor: "var(--bg-1)", color: "var(--fg-faint)", border: "none", borderRight: "2px solid var(--warn)" },
-    ".cm-activeLine": { backgroundColor: "rgba(227, 179, 65, .07)" },
-    ".cm-activeLineGutter": { backgroundColor: "rgba(227, 179, 65, .18)", color: "var(--fg)" },
+    ".cm-activeLine": { backgroundColor: "var(--cursor-line)" },
+    ".cm-activeLineGutter": { backgroundColor: "var(--cursor-active)", color: "var(--fg)" },
     "&.cm-focused": { outline: "none" },
     ".cm-cursor, .cm-fat-cursor": { borderLeftColor: "var(--warn)" },
     "&:not(.cm-focused) .cm-fat-cursor": { outline: "1px solid var(--warn)" },
-    ".cm-fat-cursor": { background: "rgba(227, 179, 65, .75) !important", color: "#0d1117 !important" },
-    ".cm-selectionBackground, &.cm-focused .cm-selectionBackground, ::selection": { backgroundColor: "rgba(122, 162, 247, .35) !important" },
+    ".cm-fat-cursor": { background: "var(--cursor-fill) !important", color: "var(--cursor-ink) !important" },
+    ".cm-selectionBackground, &.cm-focused .cm-selectionBackground, ::selection": { backgroundColor: "var(--selection) !important" },
     ".cm-panels": { backgroundColor: "var(--bg-2)", color: "var(--fg)", fontFamily: "var(--mono)" },
     ".cm-panels input": { color: "var(--fg)", fontFamily: "var(--mono)" },
     ".cm-vim-panel": { padding: "2px 8px" },
