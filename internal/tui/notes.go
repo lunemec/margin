@@ -3,8 +3,11 @@ package tui
 import (
 	"fmt"
 	"path"
+	"slices"
 	"sort"
 	"strings"
+
+	"github.com/mattn/go-runewidth"
 
 	"github.com/redrick/margin/internal/doc"
 	"github.com/redrick/margin/internal/render"
@@ -46,6 +49,7 @@ func (m *Model) notesPanel(w, h int) ([]string, map[int]string) {
 	}
 	marks := map[int]string{}
 	m.cardAt = map[int]int{}
+	m.linkAt = map[int][]cardLink{}
 	if m.blind(st) {
 		msg := []string{"", " your pass first", "", " This station is high risk. Read it", " before the agent's notes, then press", " v to compare with what it found."}
 		for i, l := range msg {
@@ -68,6 +72,7 @@ func (m *Model) notesPanel(w, h int) ([]string, map[int]string) {
 	type card struct {
 		note, row int
 		lines     []string
+		links     []cardLink
 		comment   *state.Question
 	}
 	var cards []card
@@ -127,9 +132,11 @@ func (m *Model) notesPanel(w, h int) ([]string, map[int]string) {
 			continue
 		}
 		sel := cards[i].note == m.note
-		lines := m.noteCard(st, cards[i].note, w, sel)
+		lines, links := m.noteCardLinks(st, cards[i].note, w, sel, "")
+		cards[i].links = links
 		if !sel && len(lines) > collapsedCardLines {
 			lines = append(lines[:collapsedCardLines-1:collapsedCardLines-1], p.Text("  … select it to read the rest", w, colDim, "", false, true))
+			links = slices.DeleteFunc(links, func(k cardLink) bool { return k.line >= collapsedCardLines-1 })
 		}
 		cards[i].lines = lines
 		anchors[i], heights[i] = cards[i].row, len(lines)
@@ -160,16 +167,23 @@ func (m *Model) notesPanel(w, h int) ([]string, map[int]string) {
 			below++
 			continue
 		}
+		end := limit
 		for j, l := range c.lines {
 			if y+j >= limit {
 				// A selected card too tall for the column says where to read the rest.
 				if c.note == m.note {
 					out[limit-1] = p.Text("  … enter reads it all", w, colDim, "", false, true)
+					end = limit - 1
 				}
 				break
 			}
 			out[y+j] = l
 			m.cardAt[y+j] = c.row
+		}
+		for _, k := range c.links {
+			if y+k.line < end {
+				m.linkAt[y+k.line] = append(m.linkAt[y+k.line], k)
+			}
 		}
 		color := colComment
 		if c.comment == nil {
@@ -216,6 +230,17 @@ func (m *Model) noteCard(st *doc.Station, i, w int, sel bool) []string {
 
 // noteCardOn is noteCard painted over base, so a card can sit inside a box with its own background.
 func (m *Model) noteCardOn(st *doc.Station, i, w int, sel bool, base string) []string {
+	lines, _ := m.noteCardLinks(st, i, w, sel, base)
+	return lines
+}
+
+// cardLink is a mention of another note drawn on a card: its line in the card, its columns from the
+// card's left edge, and the note it leads to.
+type cardLink struct{ line, x0, x1, station, note int }
+
+// noteCardLinks draws a note card and says where on it the mentions of other notes are, so a click
+// on one follows it.
+func (m *Model) noteCardLinks(st *doc.Station, i, w int, sel bool, base string) ([]string, []cardLink) {
 	n := st.Notes[i]
 	ks := m.noteStyle(n)
 	p := m.paint
@@ -264,9 +289,15 @@ func (m *Model) noteCardOn(st *doc.Station, i, w int, sel bool, base string) []s
 	lines := []string{p.Text(label, len(label), colInk, labelBg, true, false) + p.Text(head, w-len(label), ks.color, bg, sel, false)}
 
 	bar := render.Span{Text: "▌ ", Color: ks.color}
+	var links []cardLink
+	line := func(spans []render.Span) {
+		spans, l := m.linkSpans(spans, runewidth.StringWidth(bar.Text), len(lines))
+		links = append(links, l...)
+		lines = append(lines, p.Code(append([]render.Span{bar}, spans...), w, 0, bg))
+	}
 	add := func(s string, fg string, italic bool) {
 		for _, l := range wrap(s, inner) {
-			lines = append(lines, p.Code([]render.Span{bar, {Text: l, Color: fg, Italic: italic}}, w, 0, bg))
+			line([]render.Span{{Text: l, Color: fg, Italic: italic}})
 		}
 	}
 	switch {
@@ -277,7 +308,7 @@ func (m *Model) noteCardOn(st *doc.Station, i, w int, sel bool, base string) []s
 	}
 	var bold, code bool
 	for _, l := range wrap(n.Text, inner) {
-		lines = append(lines, p.Code(append([]render.Span{bar}, markup(l, &bold, &code, textFg)...), w, 0, bg))
+		line(markup(l, &bold, &code, textFg))
 	}
 	if n.Evidence != "" {
 		add("evidence: "+n.Evidence, colDim, true)
@@ -285,7 +316,62 @@ func (m *Model) noteCardOn(st *doc.Station, i, w int, sel bool, base string) []s
 	if changed {
 		add("Δ "+n.Changed, colChanged, false)
 	}
-	return lines
+	if len(n.RefBy) > 0 {
+		add("↩ referenced by "+strings.Join(n.RefBy, ", "), colDim, true)
+	}
+	return lines, links
+}
+
+// linkSpans colours the mentions of other notes in one line of a card and says where they are; x is
+// the column the spans start at.
+func (m *Model) linkSpans(spans []render.Span, x, line int) ([]render.Span, []cardLink) {
+	var b strings.Builder
+	for _, sp := range spans {
+		b.WriteString(sp.Text)
+	}
+	full := b.String()
+	var refs []doc.Ref
+	for _, r := range m.doc.Refs(full) {
+		if r.Note >= 0 {
+			refs = append(refs, r)
+		}
+	}
+	if len(refs) == 0 {
+		return spans, nil
+	}
+	var out []render.Span
+	piece := func(sp render.Span, a, b int) render.Span {
+		sp.Text = sp.Text[a:b]
+		return sp
+	}
+	pos := 0
+	for _, sp := range spans {
+		start, end := pos, pos+len(sp.Text)
+		pos = end
+		cut := start
+		for _, r := range refs {
+			if r.End <= cut || r.Start >= end {
+				continue
+			}
+			a, z := max(r.Start, cut), min(r.End, end)
+			if a > cut {
+				out = append(out, piece(sp, cut-start, a-start))
+			}
+			l := piece(sp, a-start, z-start)
+			l.Color, l.Light = colCursorNum, ""
+			out = append(out, l)
+			cut = z
+		}
+		if cut < end {
+			out = append(out, piece(sp, cut-start, end-start))
+		}
+	}
+	links := make([]cardLink, len(refs))
+	for i, r := range refs {
+		links[i] = cardLink{line: line, x0: x + runewidth.StringWidth(full[:r.Start]), x1: x + runewidth.StringWidth(full[:r.End]),
+			station: r.Station, note: r.Note}
+	}
+	return out, links
 }
 
 func (m *Model) commentCard(q *state.Question, w int) []string {

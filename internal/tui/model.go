@@ -140,6 +140,15 @@ type Model struct {
 	blockAt *blockMark
 	// cardAt is, per line of the notes column as last drawn, the row its card hangs from.
 	cardAt map[int]int
+	// linkAt is, per line of the notes column as last drawn, the mentions of other notes on it.
+	linkAt map[int][]cardLink
+	// jumps are where the reader followed a mention from, newest last; ctrl+o goes back.
+	jumps []jump
+	// refTurn is which mention of the selected note L follows next.
+	refTurn struct {
+		key string
+		i   int
+	}
 	// dragFrom is the row a press of the mouse started on, while the button is held.
 	dragFrom  int
 	lastClick time.Time
@@ -494,6 +503,10 @@ func (m *Model) key(msg tea.KeyMsg) tea.Cmd {
 	switch msg.String() {
 	case "q", "ctrl+c":
 		return tea.Quit
+	case "L":
+		m.followSelectedRef()
+	case "ctrl+o":
+		m.jumpBack()
 	case "j", "down":
 		m.move(1)
 	case "k", "up":

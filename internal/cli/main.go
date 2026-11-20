@@ -315,6 +315,9 @@ func cmdLint(args []string) int {
 		for _, p := range d.Problems {
 			fmt.Printf("%s: %s: %s\n", path, p.Station, p.Msg)
 		}
+		for _, b := range d.BrokenRefs() {
+			fmt.Printf("%s: hint: %s\n", path, b)
+		}
 		for _, a := range advice(d) {
 			fmt.Printf("%s: hint: %s\n", path, a)
 		}

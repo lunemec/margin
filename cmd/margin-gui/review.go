@@ -224,6 +224,8 @@ type NoteView struct {
 	At         string `json:"at"`
 	Problem    string `json:"problem,omitempty"`
 	Changed    string `json:"changed,omitempty"`
+	// RefBy lists the notes that mention this one, as stop:n.
+	RefBy []string `json:"refBy,omitempty"`
 }
 
 var stationKinds = map[doc.StationKind]string{doc.Overview: "overview", doc.Code: "code", doc.Recap: "recap", doc.Tests: "tests"}
@@ -500,7 +502,7 @@ func stationOf(d *doc.Doc, st *doc.Station, hl map[string][][]render.Span) Stati
 	}
 	for _, n := range st.Notes {
 		sv.Notes = append(sv.Notes, NoteView{Key: n.Key, Kind: n.Level(), Text: n.Text, Evidence: n.Evidence, Q: n.Q, QID: n.QID, Focus: n.Focus,
-			Confidence: n.Confidence, Unbacked: n.Unbacked(), Part: n.Part, Line: n.Line, At: n.At, Problem: n.Problem, Changed: n.Changed})
+			Confidence: n.Confidence, Unbacked: n.Unbacked(), Part: n.Part, Line: n.Line, At: n.At, Problem: n.Problem, Changed: n.Changed, RefBy: n.RefBy})
 	}
 	return sv
 }

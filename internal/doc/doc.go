@@ -108,6 +108,8 @@ type Note struct {
 	Part    int
 	Line    int
 	Problem string
+	// RefBy lists the notes that mention this one, as stop:n.
+	RefBy []string
 }
 
 type Hit struct{ Part, Line int }
@@ -163,6 +165,7 @@ func Build(r *review.Review, files *source.Files) *Doc {
 		}
 		d.Stations = append(d.Stations, st)
 	}
+	d.linkRefs()
 	return d
 }
 

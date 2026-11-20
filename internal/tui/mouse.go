@@ -59,6 +59,13 @@ func (m *Model) mouse(msg tea.MouseMsg) tea.Cmd {
 	}
 	line := msg.Y - 1
 	if m.notesShown() && msg.X > m.codeWidth() {
+		x := msg.X - m.codeWidth() - 1
+		for _, k := range m.linkAt[line] {
+			if x >= k.x0 && x < k.x1 {
+				m.followRef(k.station, k.note)
+				return nil
+			}
+		}
 		if row, ok := m.cardAt[line]; ok && row < len(m.rows) {
 			m.setCursor(row)
 		}
