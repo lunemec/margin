@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { agentReply, discussionThreads, nextThread, readReply, unreadReply } from "./assets/discussions.js";
+import { agentReply, discussionThreads, nextThread, questionSelection, readReply, unreadReply } from "./assets/discussions.js";
 
 test("next ask stays in its stop and advances through multiple threads on a line", () => {
   const drafts = [
@@ -39,4 +39,14 @@ test("a reader follow-up does not create or update an agent reply", () => {
   assert.equal(agentReply(`## c1\n\n${reader}`), "");
   assert.equal(agentReply(`## c1\n> Original comment\n\nThe agent replied.\n\n${reader}\n`), "The agent replied.");
   assert.equal(agentReply(`## c1\n> Original comment\n\nThe agent replied.\n\n${reader}\nA follow-up answer.\n`), "The agent replied.\n\nA follow-up answer.");
+});
+
+test("question drafts can follow a reload of the same code and side", () => {
+  const part = { file: "code.go", rows: [{ n: 3, s: [{ t: "before()", c: "red" }] }, { n: 4, s: [] }] };
+  const before = questionSelection(part, 2, 3);
+  assert.ok(before);
+  assert.equal(questionSelection({ ...part, rows: [{ n: 3, s: [{ t: "before", c: "blue" }, { t: "()" }] }, { n: 4 }] }, 2, 3), before);
+  assert.notEqual(questionSelection({ ...part, base: true }, 2, 3), before);
+  assert.notEqual(questionSelection({ ...part, rows: [{ n: 3, s: [{ t: "after()" }] }, { n: 4 }] }, 2, 3), before);
+  assert.equal(questionSelection(part, 2, 4), null);
 });

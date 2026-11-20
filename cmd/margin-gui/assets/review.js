@@ -1,7 +1,7 @@
 import { Events, Clipboard } from "/wails/runtime.js";
 import { api, $, $$, state, hooks, esc, prose, md, oneLine, el, toast, errText, tail, plural, shortList, base, openModal, closeModal } from "./core.js";
 import { openAnswers, hasAnswerDraft } from "./answers.js";
-import { discussionThreads, nextThread, readReply, unreadReply } from "./discussions.js";
+import { agentReply, discussionThreads, nextThread, questionSelection, readReply, unreadReply } from "./discussions.js";
 import { runTests, tryChange, toggleTestPanel, resetTests, statusOf, statusIcon, testHooks, results } from "./tests.js";
 
 export { closeModal };
@@ -415,7 +415,7 @@ function renderToolbar() {
   if (s?.kind === "code" && state.view.coverage && s.cov?.measured) btn("▶ Tests", "Run the tests that run this stop's changed lines (T without a selected line)", false, () => runFor(s, -1));
   if (s?.kind === "code" && state.view.coverage && s.cov?.missed) btn("Next untested", "The next changed line no test runs (u, U goes back)", false, () => nextUntested(1));
   if (state.spot >= 0) btn("Spotlight: " + esc(state.view.coverage?.tests[state.spot]?.label ?? "") + " ✕", "End the spotlight (esc)", true, endSpot, "warn");
-  if (reader().comments.some((c) => !c.draft)) btn("Answers", "The agent's answers to your comments, to read, edit or reply to (A)", false, () => openAnswers());
+  if (reader().comments.some((c) => !c.draft)) btn("Answers", "The agent's answers to your comments, to read, edit or reply to (A)", false, () => openDiscussionAnswers());
   const questions = btn("Questions", "Your diff questions and the agent's replies", false, () => openDiffQuestions());
   questions.id = "diff-questions-btn";
   questions.classList.toggle("hidden", !diffQuestions.length);
@@ -473,9 +473,16 @@ export function goStation(i, noteIdx = -1, step = 0) {
 
 function renderStation() {
   const focus = discussionFocus();
+  const compose = state.compose, editor = document.activeElement;
+  const caret = editor?.matches("#station .composer:not(.edit-box) textarea") ? [editor.selectionStart, editor.selectionEnd] : null;
   drawStation();
   syncDiscussionUI();
   restoreDiscussionFocus(focus);
+  if (caret && state.compose === compose) {
+    const textarea = $("#station .composer:not(.edit-box) textarea:not(:disabled)");
+    textarea?.focus({ preventScroll: true });
+    textarea?.setSelectionRange(...caret);
+  }
   covHint();
   queueMicrotask(() => queueReadingPosition());
 }
@@ -787,7 +794,7 @@ async function loadPart(s, pi, extra, whole, refresh = false) {
     if (state.view !== view || partLoads.get(k) !== request) return false;
     state.expand[k] = extra;
     state.whole[k] = whole;
-    if (part) state.parts[k] = part;
+    if (part) state.parts[k] = { ...part, viewVersion: view.version };
     else delete state.parts[k];
     if (!refresh && cur() === s) renderKeepScroll();
     return true;
@@ -1191,11 +1198,23 @@ function syncDiscussionUI() {
 function openedReply(q) {
   const path = state.view.path;
   if (activeThread === q.id) activeReply = true;
+  if (!unreadReply(path, q)) return updateDiscussionControls();
   readReply(path, q);
   for (const alert of $$("#question-alerts .question-alert")) {
     if (alert.dataset.replyReview === path && alert.dataset.replyId === q.id) alert.remove();
   }
   syncDiscussionUI();
+}
+
+async function openDiscussionAnswers(id = "") {
+  const view = state.view;
+  const opened = await openAnswers(id, discussionNavigation(), (id, section) => {
+    if (state.view?.path !== view.path) return;
+    const q = threads.get(id), text = agentReply(section);
+    if (q && text) openedReply({ ...q, reply: { kind: "section", text } });
+  });
+  if (opened) updateDiscussionControls();
+  return opened;
 }
 
 function nextDiscussion(replies) {
@@ -1242,7 +1261,10 @@ async function jumpDiscussion(review, id, reply) {
       const before = step < 0 ? stepOf(s, q.part, part.start) : step;
       await goStation(i, -1, Math.max(0, before));
       if (part && (!rowAt(q.part, q.at) || !rowAt(q.part, last))) await loadPart(s, q.part, 0, true);
-      if (state.view?.path !== review || cur()?.id !== s.id) return false;
+      if (state.view !== view || cur()?.id !== s.id) {
+        toast("The review changed. Try the jump again.");
+        return false;
+      }
       if (part && rowAt(q.part, q.at)) {
         selectRow(s.id, q.part, q.at, false);
         if (last > q.at) {
@@ -1251,10 +1273,7 @@ async function jumpDiscussion(review, id, reply) {
         }
       }
     }
-    if (reply && q.reply?.kind === "section" && await openAnswers(id, discussionNavigation())) {
-      openedReply(q);
-      return true;
-    }
+    if (reply && q.reply?.kind === "section" && await openDiscussionAnswers(id)) return true;
     const idSelector = `[data-discussion="${CSS.escape(id)}"]`;
     const card = $(reply && q.reply?.kind === "note" ? `#station ${idSelector}[data-discussion-reply]` : `#station ${idSelector}:not([data-discussion-reply])`);
     if (card) {
@@ -1357,6 +1376,13 @@ function diffQuestionCard(q, review = "", selected = false) {
     </article>`);
   if (!review) card.dataset.diffQuestion = q.id;
   card.dataset.discussion = q.id;
+  if (review && q.answer) {
+    const answer = card.querySelector(".diff-question-answer");
+    answer.tabIndex = 0;
+    const read = () => { if (state.view?.path === review) openedReply(threads.get(q.id) ?? { ...q, reply: { text: q.answer } }); };
+    answer.addEventListener("click", read);
+    answer.addEventListener("focus", read);
+  }
   if (review && !q.answer && !selected) {
     const jump = el(`<button class="small">Jump to question</button>`);
     jump.onclick = () => jumpDiscussion(review, q.id, false);
@@ -1392,7 +1418,7 @@ function openDiffQuestions(id = "") {
   list.dataset.selected = id;
   renderDiffQuestionList(list, path, id);
   const modal = openModal("Questions you asked", list, "narrow");
-  if (id) addDiscussionNavigation(modal);
+  addDiscussionNavigation(modal);
   syncDiscussionUI();
   if (id) {
     const selected = list.children[diffQuestions.length - 1 - diffQuestions.findIndex((q) => q.id === id)];
@@ -1482,15 +1508,24 @@ function needLine(what) {
 
 function openComposer(station, part, line, opts = {}) {
   const keep = state.compose && state.compose.text ? state.compose : null;
-  if (keep && !(keep.station === station && keep.part === part && keep.line === line)) {
+  if (keep?.pending) return;
+  const reselect = keep?.mode === "ask" && (!keep.anchor || keep.version !== state.view.version) && !opts.answers;
+  if (keep && !reselect && !(keep.station === station && keep.part === part && keep.line === line)) {
     toast("Finish or cancel what you are writing first.");
     return;
   }
+  const s = cur();
+  if (s?.id !== station || !s.parts[part]) return;
+  const p = partData(s, part);
+  const from = opts.from ?? line, end = opts.end ?? line;
+  const anchor = questionSelection(p.viewVersion === state.view.version ? p : s.parts[part], from, end);
+  if ((reselect || opts.mode === "ask") && !anchor) return toast("Wait for the selected code to reload, then choose Ask again.");
   state.sel = { station, part, line };
-  const mode = opts.mode ?? (opts.answers ? "answer" : "comment");
-  state.compose = keep ?? { station, part, line, from: opts.from ?? line, end: opts.end ?? line, version: state.view.version,
-    mode, answers: opts.answers ?? "", label: "", blocking: false, text: "", picking: !!opts.picking && mode === "comment" && !opts.answers };
-  if (!keep) Object.assign(state.compose, { mode, answers: opts.answers ?? "" });
+  const mode = reselect ? "ask" : opts.mode ?? (opts.answers ? "answer" : "comment");
+  if (!keep || reselect) {
+    state.compose = { station, part, line, from, end, anchor, version: state.view.version,
+      mode, answers: opts.answers ?? "", label: "", blocking: false, text: keep?.text ?? "", picking: !!opts.picking && mode === "comment" && !opts.answers };
+  }
   renderKeepScroll();
   const ta = document.querySelector("#station .composer textarea");
   if (state.compose.picking) document.querySelector("#station .composer")?.focus();
@@ -1503,6 +1538,11 @@ function composer(s, p) {
   const labels = reader().labels ?? [];
   const note = cp.answers ? s.notes.find((n) => n.key === cp.answers) : null;
   const ask = cp.mode === "ask";
+  if (cp.version !== state.view.version && cp.anchor &&
+      questionSelection(p.viewVersion === state.view.version ? p : s.parts[cp.part], cp.from, cp.end) === cp.anchor) {
+    cp.version = state.view.version;
+  }
+  const reselect = ask && (!cp.anchor || cp.version !== state.view.version);
   const lines = cp.from === cp.end ? cp.from + 1 : `${cp.from + 1}–${cp.end + 1}`;
   const head = ask
     ? `Ask the agent about <code>${esc(p.file)}:${lines}</code>`
@@ -1510,8 +1550,8 @@ function composer(s, p) {
       ? `Answer to: <span class="muted">${esc(oneLine(note.text).slice(0, 90))}${note.text.length > 90 ? "…" : ""}</span>`
       : `Comment on <code>${esc(p.file)}:${cp.line + 1}</code>`;
   const foot = ask
-    ? state.agentLive
-      ? "Enter asks, Shift+Enter adds a line, Esc cancels."
+    ? reselect ? "The code changed. Select the line or range and choose Ask again to keep this draft."
+      : state.agentLive ? "Enter asks, Shift+Enter adds a line, Esc cancels."
       : "Start the review agent to ask a question."
     : "Kept as a draft until you send the comments to the agent. Ctrl+Enter saves, Esc cancels.";
   const box = el(`<div class="composer${ask ? " ask" : ""}">
@@ -1536,7 +1576,7 @@ function composer(s, p) {
   }
   const controls = () => {
     ta.disabled = cancelButton.disabled = !!cp.pending;
-    submit.disabled = !!cp.pending || (ask && !state.agentLive);
+    submit.disabled = !!cp.pending || reselect || (ask && !state.agentLive);
     if (switchMode) switchMode.disabled = !!cp.pending;
   };
   controls();
@@ -1589,7 +1629,7 @@ function composer(s, p) {
   }
   ta.oninput = () => (cp.text = ta.value);
   const save = async () => {
-    if (cp.pending || (ask && !state.agentLive)) return;
+    if (cp.pending || (ask && (!state.agentLive || !cp.anchor || cp.version !== state.view.version))) return;
     cp.pending = true;
     controls();
     let ok;
@@ -3082,7 +3122,7 @@ export function reviewKey(e) {
   if (!state.view) return false;
   const k = e.key;
   const s = cur();
-  if ((k === "Enter" || k === " ") && e.target.closest?.(".discussion-nav button, .jump-reply")) return false;
+  if ((k === "Enter" || k === " ") && e.target.closest?.("button, summary")?.closest(".discussion-nav, .jump-reply, .diff-questions-list, .answers")) return false;
   if (k === "Tab") return false;
   if (document.querySelector(".modal-back")) return modalKey(e);
   const ov = s.kind === "overview" && guided();
@@ -3170,7 +3210,7 @@ export function reviewKey(e) {
     c: () => startOnLine("comment"),
     S: sendComments,
     P: sendFixes,
-    A: () => openAnswers(),
+    A: () => openDiscussionAnswers(),
     r: () => reload().then(() => toast("reloaded")),
     H: openHelp,
   };

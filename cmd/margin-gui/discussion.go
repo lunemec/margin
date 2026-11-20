@@ -13,38 +13,38 @@ type DiscussionLocation struct {
 }
 
 func locateDiscussionLine(d *doc.Doc, q state.Question) DiscussionLocation {
+	return locateDiscussionCode(d, q.Station, q.File, q.Side, func(lines []string) int {
+		at := q.Line - 1
+		if at < 0 {
+			return -1
+		}
+		if at < len(lines) && matchesDiscussionLine(lines, at, q.Needle) {
+			return at
+		}
+		return uniqueDiscussionLine(len(lines), q.Needle, func(i int) bool {
+			return strings.TrimSpace(lines[i]) == q.Needle
+		})
+	})
+}
+
+func locateDiscussionCode(d *doc.Doc, station, file, side string, find func([]string) int) DiscussionLocation {
 	lost := DiscussionLocation{Part: -1, At: -1}
-	_, s := d.Station(q.Station)
-	if s == nil || q.Line < 1 {
+	_, s := d.Station(station)
+	if s == nil {
 		return lost
 	}
 	var parts []int
 	for i, p := range s.Parts {
-		if p.Err == nil && p.Spec.File == q.File && p.Base == (q.Side == "base") {
+		if p.Err == nil && p.Spec.File == file && p.Base == (side == "base") {
 			parts = append(parts, i)
 		}
 	}
 	if len(parts) == 0 {
 		return lost
 	}
-	lines := s.Parts[parts[0]].Lines
-	at := q.Line - 1
-	if at >= len(lines) || !matchesDiscussionLine(lines, at, q.Needle) {
-		at = -1
-		if q.Needle == "" {
-			return lost
-		}
-		for i, line := range lines {
-			if strings.TrimSpace(line) == q.Needle {
-				if at >= 0 {
-					return lost
-				}
-				at = i
-			}
-		}
-		if at < 0 {
-			return lost
-		}
+	at := find(s.Parts[parts[0]].Lines)
+	if at < 0 {
+		return lost
 	}
 	for _, i := range parts {
 		p := s.Parts[i]
@@ -53,6 +53,22 @@ func locateDiscussionLine(d *doc.Doc, q state.Question) DiscussionLocation {
 		}
 	}
 	return DiscussionLocation{Part: parts[0], At: at}
+}
+
+func uniqueDiscussionLine(count int, excerpt string, matches func(int) bool) int {
+	if strings.TrimSpace(excerpt) == "" {
+		return -1
+	}
+	at := -1
+	for i := 0; i < count; i++ {
+		if matches(i) {
+			if at >= 0 {
+				return -1
+			}
+			at = i
+		}
+	}
+	return at
 }
 
 func matchesDiscussionLine(lines []string, at int, needle string) bool {

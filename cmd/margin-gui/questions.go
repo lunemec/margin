@@ -50,8 +50,7 @@ type DiffQuestion struct {
 
 type LocatedQuestion struct {
 	DiffQuestion
-	Part int `json:"part"`
-	At   int `json:"at"`
+	DiscussionLocation
 }
 
 type questionEvent struct {
@@ -128,6 +127,9 @@ func (r *Reviews) enqueueQuestion(d *doc.Doc, id string, first *DiffQuestion) er
 	s := r.agents.session(d.Review.Path)
 	if s == nil {
 		return errors.New("start the agent for this review before asking a question")
+	}
+	if resumeIdentity(s.cmd.Dir) != resumeIdentity(d.Review.RepoDir()) {
+		return errors.New("the review's worktree changed; restart its agent")
 	}
 	if agentPreset(s.command) == "" {
 		return errors.New("asking about the diff requires a built-in agent command in Settings")
@@ -214,49 +216,19 @@ func (r *Reviews) DiffQuestions(version int) ([]LocatedQuestion, error) {
 }
 
 func locateQuestion(d *doc.Doc, q DiffQuestion) LocatedQuestion {
-	out := LocatedQuestion{DiffQuestion: q, Part: -1, At: -1}
-	_, s := d.Station(q.Station)
-	if s == nil || q.Line < 1 || q.End < q.Line {
-		return out
-	}
-	var parts []int
-	for i, p := range s.Parts {
-		if p.Err == nil && p.Spec.File == q.File && p.Base == (q.Side == "base") {
-			parts = append(parts, i)
+	location := locateDiscussionCode(d, q.Station, q.File, q.Side, func(lines []string) int {
+		if q.Line < 1 || q.End < q.Line {
+			return -1
 		}
-	}
-	if len(parts) == 0 {
-		return out
-	}
-	code := s.Parts[parts[0]].Lines
-	excerpt := strings.Split(q.Excerpt, "\n")
-	at := q.Line - 1
-	if at > len(code)-len(excerpt) || !slices.Equal(code[at:at+len(excerpt)], excerpt) {
-		at = -1
-		if strings.TrimSpace(q.Excerpt) == "" {
-			return out
+		excerpt := strings.Split(q.Excerpt, "\n")
+		limit := len(lines) - len(excerpt)
+		matches := func(i int) bool { return slices.Equal(lines[i:i+len(excerpt)], excerpt) }
+		if at := q.Line - 1; at <= limit && matches(at) {
+			return at
 		}
-		for i := 0; i <= len(code)-len(excerpt); i++ {
-			if slices.Equal(code[i:i+len(excerpt)], excerpt) {
-				if at >= 0 {
-					return out
-				}
-				at = i
-			}
-		}
-		if at < 0 {
-			return out
-		}
-	}
-	out.At, out.Part = at, parts[0]
-	for _, i := range parts {
-		p := s.Parts[i]
-		if at >= p.Range.Start && at <= p.Range.End {
-			out.Part = i
-			break
-		}
-	}
-	return out
+		return uniqueDiscussionLine(limit+1, q.Excerpt, matches)
+	})
+	return LocatedQuestion{DiffQuestion: q, DiscussionLocation: location}
 }
 
 type questionJob struct {

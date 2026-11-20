@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -17,6 +18,18 @@ import (
 )
 
 const questionAnswerLimit = 16 << 10
+
+// Gemini can fall back from plan mode and allow configured tools. Apply an explicit tool policy.
+const geminiQuestionPolicy = `[[rule]]
+toolName = "*"
+decision = "deny"
+priority = 998
+
+[[rule]]
+toolName = ["read_file", "grep_search", "glob", "list_directory"]
+decision = "allow"
+priority = 999
+`
 
 func runDiffQuestion(ctx context.Context, job questionJob) (string, error) {
 	provider := agentPreset(job.command)
@@ -48,7 +61,17 @@ Reader's question:
 	case "claude":
 		args = []string{"--print", "--no-session-persistence", "--permission-mode", "plan", "--tools", "Read,Grep,Glob", "--disallowedTools", "mcp__*", "--output-format", "json"}
 	case "gemini":
-		args = []string{"--approval-mode", "plan", "--output-format", "json", "--prompt", prompt}
+		dir, err := os.MkdirTemp("", "margin-gemini-*")
+		if err != nil {
+			return "", err
+		}
+		defer os.RemoveAll(dir)
+		policy := filepath.Join(dir, "question.toml")
+		if err := os.WriteFile(policy, []byte(geminiQuestionPolicy), 0o600); err != nil {
+			return "", err
+		}
+		args = []string{"--approval-mode", "plan", "--policy", policy,
+			"--allowed-mcp-server-names", "margin-question-no-mcp", "--output-format", "json", "--prompt", prompt}
 	case "opencode":
 		args = []string{"run", "--agent", "plan", "--format", "json"}
 	default:

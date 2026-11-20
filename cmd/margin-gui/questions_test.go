@@ -18,6 +18,7 @@ import (
 func TestDiffQuestionsUseIndependentSessions(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	path, other := testutil.Example(t), testutil.Example(t)
+	repo := filepath.Join(filepath.Dir(path), "current")
 	r := &Reviews{agents: &Agents{sessions: map[string]*session{
 		path: {command: "codex", cmd: &exec.Cmd{Dir: filepath.Dir(path)}},
 	}}}
@@ -56,13 +57,17 @@ func TestDiffQuestionsUseIndependentSessions(t *testing.T) {
 		select {
 		case job := <-started:
 			q := job.question
-			if q.Text != body || q.Side != "base" || q.End-q.Line != 1 || q.Excerpt == "" || job.review != path || job.repo != filepath.Dir(path) {
+			if q.Text != body || q.Side != "base" || q.End-q.Line != 1 || q.Excerpt == "" || job.review != path || job.repo != repo {
 				t.Fatalf("unexpected job for %s: %+v", body, job)
 			}
 		case <-time.After(5 * time.Second):
 			t.Fatalf("question %s did not start", body)
 		}
 	}
+	if err := ask("wrong worktree"); err == nil || !strings.Contains(err.Error(), "worktree changed") {
+		t.Fatalf("accepted an agent from the wrong worktree: %v", err)
+	}
+	r.agents.sessions[path].cmd.Dir = repo
 	for _, body := range []string{"first", "second", "third"} {
 		if err := ask(body); err != nil {
 			t.Fatal(err)
@@ -142,7 +147,14 @@ func TestQuestionCLIAdapters(t *testing.T) {
 set -eu
 agent=${0##*/}
 case "$agent" in
-  gemini) for arg do prompt=$arg; done ;;
+  gemini)
+    [ "$1 $2 $3" = '--approval-mode plan --policy' ]
+    grep -Fq 'toolName = "*"' "$4"
+    grep -Fq 'decision = "deny"' "$4"
+    grep -Fq 'toolName = ["read_file", "grep_search", "glob", "list_directory"]' "$4"
+    [ "$5 $6" = '--allowed-mcp-server-names margin-question-no-mcp' ]
+    for arg do prompt=$arg; done
+    ;;
   *) prompt=$(cat) ;;
 esac
 case "$prompt" in

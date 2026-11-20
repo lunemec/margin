@@ -34,6 +34,13 @@ export function discussionThreads(view, questions, sections) {
   return threads;
 }
 
+export function questionSelection(part, from, end) {
+  if (!part?.rows) return null;
+  const rows = part.rows.filter((r) => r.n > 0 && r.n - 1 >= from && r.n - 1 <= end);
+  if (rows.length !== end - from + 1) return null;
+  return JSON.stringify([part.file, !!part.base, rows.map((r) => (r.s ?? []).map((span) => span.t).join(""))]);
+}
+
 export function nextThread(threads, station, replies, activeID, from, stepAt) {
   const order = (x) => [stepAt(x.part, x.at), x.part < 0 ? Infinity : x.part, x.at];
   const compare = (a, b) => {
