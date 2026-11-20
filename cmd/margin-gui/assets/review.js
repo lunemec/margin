@@ -1206,8 +1206,9 @@ function openedReply(q) {
   syncDiscussionUI();
 }
 
-async function openDiscussionAnswers(id = "") {
+export async function openDiscussionAnswers(id = "") {
   const view = state.view;
+  if (!view) return false;
   const opened = await openAnswers(id, discussionNavigation(), (id, section) => {
     if (state.view?.path !== view.path) return;
     const q = threads.get(id), text = agentReply(section);
