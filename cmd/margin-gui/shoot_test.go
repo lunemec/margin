@@ -128,7 +128,7 @@ export const Call = {
       const m = name.slice(12);
       if (m === "Running") return !!agent;
       if (m === "Live") return [];
-      if (m === "Start") {
+      if (m === "Start" || m === "Scrollback") {
         const t = await (await fetch("/agent?f=" + encodeURIComponent(agent))).text();
         return btoa(String.fromCharCode(...new TextEncoder().encode(t.replaceAll("\n", "\r\n"))));
       }

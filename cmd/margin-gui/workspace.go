@@ -28,27 +28,38 @@ type (
 )
 
 type Initial struct {
-	Root   string `json:"root"`
-	Target string `json:"target"`
-	Review string `json:"review"`
+	Root    string `json:"root"`
+	Target  string `json:"target"`
+	Review  string `json:"review"`
+	Restore bool   `json:"restore"`
 }
 
 // Initial is what the command line asked to open: margin-gui [folder] [branch | commit | .], or
 // margin-gui <file.review.yaml>. A folder given here is added to the workspace.
 func (w *Workspace) Initial() Initial {
+	return w.initial(os.Args[1:])
+}
+
+func (w *Workspace) initial(args []string) Initial {
 	var in Initial
-	if len(os.Args) > 1 && strings.HasSuffix(os.Args[1], ".review.yaml") {
-		in.Review, _ = filepath.Abs(os.Args[1])
+	if len(args) == 0 {
+		if path := lastReviewPath(); path != "" {
+			if info, err := os.Stat(path); err == nil && info.Mode().IsRegular() {
+				in.Review, in.Restore = path, true
+			}
+		}
 		return in
 	}
-	if len(os.Args) > 1 {
-		if abs, err := filepath.Abs(os.Args[1]); err == nil {
-			in.Root = abs
-			_, _ = w.AddFolder(abs)
-		}
+	if strings.HasSuffix(args[0], ".review.yaml") {
+		in.Review, _ = filepath.Abs(args[0])
+		return in
 	}
-	if len(os.Args) > 2 {
-		in.Target = os.Args[2]
+	if abs, err := filepath.Abs(args[0]); err == nil {
+		in.Root = abs
+		_, _ = w.AddFolder(abs)
+	}
+	if len(args) > 1 {
+		in.Target = args[1]
 	}
 	return in
 }
@@ -66,8 +77,13 @@ func (w *Workspace) AddFolder(path string) ([]Folder, error)    { return workspa
 func (w *Workspace) RemoveFolder(path string) ([]Folder, error) { return workspace.RemoveFolder(path) }
 func (w *Workspace) Status(dirs []string) map[string]int        { return workspace.Status(dirs) }
 func (w *Workspace) RecentReviews() []ReviewInfo                { return workspace.RecentReviews() }
-func (w *Workspace) ForgetReview(path string) error             { return workspace.ForgetReview(path) }
-func (w *Workspace) Targets(dir string) (*Targets, error)       { return workspace.TargetsIn(dir) }
+func (w *Workspace) ForgetReview(path string) error {
+	if err := workspace.ForgetReview(path); err != nil {
+		return err
+	}
+	return forgetLastReview(path)
+}
+func (w *Workspace) Targets(dir string) (*Targets, error) { return workspace.TargetsIn(dir) }
 func (w *Workspace) PullRequests(dir string) ([]PullRequest, error) {
 	return workspace.PullRequests(dir)
 }

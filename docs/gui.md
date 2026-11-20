@@ -131,6 +131,21 @@ new ones are marked and `N` jumps to them.
 repository, and asks it to start the review. Drag the line above it to give it more room; `` ` ``
 puts the keyboard in it and `ctrl+esc` takes it out again.
 
+When launched without arguments, margin-gui reopens the last review at your saved stop and guided
+step. If its agent was still running when you quit, the window tries to resume the same conversation
+without sending another review prompt. **Stop agent** leaves the conversation available under
+**Resume agent**. Launch arguments still select a repository or review explicitly.
+
+Margin records conversation IDs automatically for the Codex and Claude Code presets. For Gemini
+CLI, OpenCode, or an older conversation, **Link saved conversation** accepts the exact conversation
+ID when the saved agent uses a supported preset. When a conversation cannot be reopened,
+**Continue from saved review** starts the same saved command and asks it to use the existing review
+and answers as context while it waits for your next instruction.
+
+GUI resume records are JSON in `$XDG_STATE_HOME/margin/gui/` or `~/.local/state/margin/gui/` by
+default. The agent keeps its conversation history in its own storage. Notes, verdicts, drafts, and
+coverage stay with the review files.
+
 The agent talks to the window with `margin` commands: `margin note` adds a note, `margin goto` shows
 you a line, `margin where` tells it what you are looking at, `margin answer` and `margin resolve`
 answer your questions and comments, `margin coverage` records which tests run which lines. These

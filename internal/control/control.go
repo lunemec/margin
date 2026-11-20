@@ -43,6 +43,28 @@ func Dir() string {
 }
 
 var unsafeName = regexp.MustCompile(`[^A-Za-z0-9._-]+`)
+var agentKey = regexp.MustCompile(`^[A-Z2-7]{26}$`)
+
+func AgentSocket(key string) (string, error) {
+	if !agentKey.MatchString(key) {
+		return "", errors.New("invalid agent registration key")
+	}
+	// Keep the name short for Unix socket path limits, and out of Live's viewer search.
+	return filepath.Join(Dir(), "gui-agent-"+key[:12]), nil
+}
+
+func RegisterAgent(endpoint, id, reviewPath string) {
+	split := strings.LastIndexByte(endpoint, ':')
+	if split < 0 {
+		return
+	}
+	socket, key := endpoint[:split], endpoint[split+1:]
+	expected, err := AgentSocket(key)
+	if err != nil || !filepath.IsAbs(socket) || filepath.Base(socket) != filepath.Base(expected) {
+		return
+	}
+	_, _ = Call(socket, Request{Cmd: "register", Arg: key + " " + id + " " + reviewPath})
+}
 
 func SocketPath(reviewPath string) string {
 	sum := sha256.Sum256([]byte(reviewPath))

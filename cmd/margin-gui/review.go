@@ -3,6 +3,8 @@ package main
 import (
 	"errors"
 	"fmt"
+	"log"
+	"os"
 	"strings"
 	"sync"
 
@@ -239,6 +241,18 @@ func (r *Reviews) Open(dir, arg string, fresh bool) (*Opened, error) {
 		return nil, err
 	}
 	loc := target.Locate(t)
+	if _, err := os.Stat(loc.Path); fresh || errors.Is(err, os.ErrNotExist) {
+		if r.agents != nil {
+			if err := r.agents.stopForReset(loc.Path); err != nil {
+				return nil, err
+			}
+		}
+		lease, err := leaseAgent(loc.Path)
+		if err != nil {
+			return nil, err
+		}
+		defer lease.Close()
+	}
 	created, added, err := target.Ensure(loc, t, fresh)
 	if err != nil {
 		return nil, err
@@ -247,6 +261,11 @@ func (r *Reviews) Open(dir, arg string, fresh bool) (*Opened, error) {
 	r.path = loc.Path
 	r.mu.Unlock()
 	openedReview(loc.Path)
+	if created {
+		if err := clearReviewResume(loc.Path); err != nil {
+			log.Printf("clearing resume state for a fresh review: %v", err)
+		}
+	}
 	return &Opened{Path: loc.Path, Repo: t.Repo, Label: t.Label(), Created: created, Added: added, Notes: loc.Notes, Shared: r.serve(loc.Path)}, nil
 }
 
