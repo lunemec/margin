@@ -21,6 +21,7 @@ go build -o "$work/margin" ./cmd/margin-tui
 cp -r testdata/example "$work/ex"
 rm -f "$work/ex/example.review.state.yaml"
 review="$work/ex/example.review.yaml"
+review_state="$work/ex/example.review.state.yaml"
 cat >"$work/ex/example.review.state.yaml" <<'EOF'
 questions:
   - id: q1
@@ -81,7 +82,7 @@ rst='\033[0m'
 } >"$work/agent.ans"
 
 HOME="$work/home" XDG_CONFIG_HOME="$work/home/.config" XDG_DATA_HOME="$work/home/.local/share" \
-	XDG_STATE_HOME="$work/home/.local/state" MARGIN_SHOOT_ADDR="127.0.0.1:$port" \
+	XDG_STATE_HOME="$work/home/.local/state" MARGIN_SHOOT_ADDR="127.0.0.1:$port" MARGIN_SHOOT_GH="$work/gh" \
 	"$work/shoot.test" -test.run TestShootServer -test.timeout 0 >"$work/server.log" 2>&1 &
 server=$!
 until grep -q . "$work/server.log" 2>/dev/null && python3 -c "import socket; socket.create_connection(('127.0.0.1', $port))" 2>/dev/null; do sleep 0.2; done
@@ -115,4 +116,32 @@ shot around 1472 700 "full=1&do=g:reserve,s:around this stop"
 shot spotlight 1472 700 "full=1&do=g:tests,j,j,j,Enter,g:reserve:2,s:// Reserve takes"
 shot guide-recap 1462 700 "full=0&do=g:store,1,g:reserve,1,g:recap"
 shot try-edit 1472 700 "full=1&do=g:reserve,s:// Reserve takes,l:if qty <= 0,J,J,i,z:1500,f,<,l,x"
+
+# The GitHub shots: an invented pull request (see shoot_github_test.go) with one comment of yours
+# already posted, one picked for the review, and threads others started.
+cat >"$review_state" <<'EOF'
+questions:
+  - id: c1
+    kind: comment
+    station: reserve
+    file: inventory/stock.go
+    line: 37
+    needle: 'available := s.items[sku]'
+    text: 'praise: Reading it once under the lock is right.'
+    asked: 2026-11-19T09:00:00Z
+    github: https://github.com/example/shop/pull/42#discussion_r1
+  - id: c2
+    kind: comment
+    draft: true
+    station: reserve
+    file: inventory/stock.go
+    line: 42
+    needle: 's.log.Record(sku, -qty)'
+    text: 'suggestion (non-blocking): Record the reason too, so the log explains itself.'
+    asked: 2026-11-19T14:00:00Z
+    for_github: true
+EOF
+touch "$work/gh"
+shot github-threads 1462 1250 "full=1&do=g:reserve,z:1500,s:// Reserve takes"
+shot github-review 1462 1250 "full=1&do=g:reserve,z:1500,s:// Reserve takes,k:GitHub review,z:1500"
 echo "wrote $(ls "$out"/*.webp | wc -l) screenshots to $out"

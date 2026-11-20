@@ -323,7 +323,7 @@ section.block { padding: 8rem 0 0; }
 .safety .head h2 { color: var(--paper); }
 .safety .head p { color: color-mix(in srgb, var(--paper) 65%, transparent); }
 .safety .eyebrow { color: #ff8a73; }
-.safety ul { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 2rem; }
+.safety ul { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2rem; }
 .safety li { border-top: 1px solid color-mix(in srgb, var(--paper) 22%, transparent); padding-top: 1rem; font-size: 1rem; color: color-mix(in srgb, var(--paper) 72%, transparent); }
 .safety li b { display: block; font: 400 1.5rem/1.1 var(--display); color: var(--paper); font-weight: 400; margin-bottom: .5rem; }
 .safety code { background: color-mix(in srgb, var(--paper) 12%, transparent); color: var(--paper); }
@@ -529,7 +529,7 @@ footer .wrap { display: flex; justify-content: space-between; flex-wrap: wrap; g
         <p>There are plenty of places to look at a diff. margin is the one that makes sure you actually read it, and can tell you when you are done. Here is what people say before they try it.</p>
       </div>
       <div class="objections">
-        <div class="objection reveal"><q>GitHub already has code review.</q><span class="reply">it has a comment box.</span><p>A pull request page lists files alphabetically and lets you approve without opening half of them. margin plans the route, and exports the review to GitHub when you are done.</p></div>
+        <div class="objection reveal"><q>GitHub already has code review.</q><span class="reply">it has a comment box.</span><p>A pull request page lists files alphabetically and lets you approve without opening half of them. margin plans the route, posts your review to the pull request when you are done, and brings the replies back onto your lines.</p></div>
         <div class="objection reveal"><q>My agent can just review it for me.</q><span class="reply">and here it does — in the margin.</span><p>The agent writes a note beside every change and answers on the line. You make the call. It never approves anything, and blind mode lets you read first.</p></div>
         <div class="objection reveal"><q>I'll just read the diff.</q><span class="reply">for the first 400 lines, maybe.</span><p>margin cuts the change into a few stops, keeps the import churn for the end, counts what you read and tells you when it is time for a break.</p></div>
         <div class="objection reveal"><q>The tests pass. Ship it.</q><span class="reply">do they test this line?</span><p>Per-line coverage shows what no test runs. Then break the line yourself, in place, with vim keys, and watch which tests notice.</p></div>
@@ -548,6 +548,7 @@ footer .wrap { display: flex; justify-content: space-between; flex-wrap: wrap; g
               <tr><td>Break a line, see if a test notices</td><td class="n">no</td><td class="n">no</td><td class="us y"><kbd>i</kbd>, edit, <kbd>:w</kbd></td></tr>
               <tr><td>Knows what you have not read</td><td class="m">viewed checkboxes</td><td class="n">no</td><td class="us y">the recap lists it</td></tr>
               <tr><td>You make the call</td><td class="y">yes</td><td class="n">it does</td><td class="us y">yes, with a recommendation</td></tr>
+              <tr><td>The pull request's threads beside the code you read</td><td class="y">yes</td><td class="n">no</td><td class="us y">pulled onto your lines</td></tr>
               <tr><td>Before you push, offline</td><td class="n">no</td><td class="y">yes</td><td class="us y">any branch, commit or worktree</td></tr>
             </tbody>
           </table>
@@ -640,7 +641,7 @@ diff --git a/inventory/report.py b/inventory/report.py
           <article class="step" data-shot="5">
             <div class="ph">③<small>Decide</small></div>
             <h3>The recap tells you what to do.</h3>
-            <p>Approve, request changes, or not finished — with the reasons and every open item one <kbd>enter</kbd> away. <code>margin-tui export</code> makes it a PR review you post yourself.</p>
+            <p>Approve, request changes, or not finished — with the reasons and every open item one <kbd>enter</kbd> away. margin-gui sends it to the pull request as one review, after you confirm; <code>margin-tui export</code> gives the same as text to post yourself.</p>
             <div class="cmp shot"><img loading="lazy" src="screenshots/guide-recap.svg" width="1462" height="700" alt=""><img class="g" loading="lazy" src="screenshots/gui/guide-recap.webp" alt=""><span class="cmp-tag l">margin-tui</span><span class="cmp-tag r">margin-gui</span><input class="cmp-range" type="range" min="0" max="100" value="50" aria-label="Drag to compare margin-tui and margin-gui"><span class="cmp-bar"></span></div>
           </article>
         </div>
@@ -752,7 +753,7 @@ diff --git a/inventory/report.py b/inventory/report.py
         <article class="tile s2 reveal">
           <span class="tag">Resume</span>
           <h3>Stop any time.</h3>
-          <p>Come back tomorrow, in either app. Verdicts, marks, comments and notes are exactly where you left them.</p>
+          <p>Come back tomorrow, in either app. Verdicts, marks, comments and notes are where you left them; margin-gui reopens the last review at the same stop and scroll, and picks up the agent's own conversation.</p>
         </article>
         <article class="tile s2 reveal">
           <span class="tag">Nothing left out</span>
@@ -769,11 +770,22 @@ diff --git a/inventory/report.py b/inventory/report.py
           <h3>Find it in every stop.</h3>
           <p><kbd>/</kbd> searches the code of the whole review, <kbd>n</kbd> and <kbd>N</kbd> jump between the matches.</p>
         </article>
-        <article class="tile s3 reveal">
+        <article class="tile s2 reveal">
           <span class="tag">Export</span>
-          <h3>A review ready to post.</h3>
-          <p>Markdown to paste, or <code>--format github</code> for <code>gh api</code> with the right event. margin never posts for you.</p>
+          <h3>A review ready to paste.</h3>
+          <p>Markdown, or <code>--format github</code> for <code>gh api</code> with the right event: your comments, the problems you agreed with and your calls.</p>
           <img loading="lazy" src="screenshots/export.svg" width="992" height="763" alt="margin export output">
+        </article>
+        <article class="tile s4 reveal">
+          <span class="tag">GitHub, both ways</span>
+          <h3>Post your comments. Read what came back.</h3>
+          <p>When the review belongs to a pull request, margin-gui posts a comment of yours at once, or sends the ones you picked as one review: comment, approve or request changes. Every post shows the line it lands on and the exact text before you confirm it. Everyone's threads come back onto their lines, with replies and reactions; resolve them where you read them, and <kbd>↻</kbd> pulls again.</p>
+          <div class="cmp tile-cmp"><img loading="lazy" src="screenshots/gui/github-threads.webp" width="2192" height="1873" alt="GitHub threads on their lines: a posted comment with a reaction and a reply, and a resolved thread folded"><img class="g" loading="lazy" src="screenshots/gui/github-review.webp" alt="Sending the picked comments to the pull request as one review, with the decision"><span class="cmp-tag l">on the line</span><span class="cmp-tag r">send a review</span><input class="cmp-range" type="range" min="0" max="100" value="50" aria-label="Drag to compare threads on the line and sending a review"><span class="cmp-bar"></span></div>
+        </article>
+        <article class="tile s3 reveal">
+          <span class="tag">Linked notes</span>
+          <h3>Notes that point at each other.</h3>
+          <p>When the agent writes <code>resolve:2</code> in a note, it is a link to note 2 of the <code>resolve</code> stop, in both apps. Follow it with a click or <kbd>enter</kbd>, and the note pointed at lists every note that mentions it.</p>
         </article>
         <article class="tile s3 dark reveal">
           <span class="tag">Per repository</span>
@@ -816,7 +828,7 @@ dist/</pre>
         <article class="tile s3 dark reveal">
           <span class="tag">margin-gui</span>
           <h3>The desktop app.</h3>
-          <p>Your repositories, worktrees, branches and pull requests in a sidebar, the agent in a terminal inside the window. No tmux. Light or dark, as your desktop is.</p>
+          <p>Your repositories, worktrees, branches and pull requests in a sidebar, the agent in a terminal inside the window, and the pull request's own conversation beside your review. No tmux. Light or dark, as your desktop is.</p>
           <pre><span class="k">go install</span> github.com/redrick/margin/cmd/margin-gui@latest
 <span class="k">margin-gui</span> --install   <span class="c"># into your launcher</span></pre>
           <p><a href="https://github.com/redrick/margin/blob/main/docs/gui.md">Read the manual →</a></p>
@@ -839,7 +851,7 @@ dist/</pre>
         <article class="tile s6 reveal">
           <span class="tag">Light or dark</span>
           <h3>Matches your screen.</h3>
-          <p>margin-gui follows your desktop's light or dark setting and switches along with it, or stays on the one you pick in its settings. margin-tui asks your terminal for its background, tmux included, and picks light or dark colours to match. Code, notes and the agent's terminal come along.</p>
+          <p>margin-gui follows your desktop's light or dark setting and switches along with it, or stays on the one you pick in its settings: Railscasts when dark, Catppuccin Latte when light. margin-tui asks your terminal for its background, tmux included, and picks light or dark colours to match. Code, notes and the agent's terminal come along.</p>
           <div class="cmp tile-cmp" style="max-width: 820px; margin-inline: auto"><img loading="lazy" src="screenshots/gui/hero.webp" width="2192" height="1289" alt="margin-gui in its dark theme"><img class="g" loading="lazy" src="screenshots/gui/hero-light.webp" alt="margin-gui in its light theme"><span class="cmp-tag l">dark</span><span class="cmp-tag r">light</span><input class="cmp-range" type="range" min="0" max="100" value="50" aria-label="Drag to compare the dark and light themes"><span class="cmp-bar"></span></div>
         </article>
         <article class="tile s6 reveal">
@@ -881,6 +893,7 @@ dist/</pre>
         <li class="reveal"><b>Runs only what you set up</b>On its own, margin runs nothing from the repository and changes neither its code nor its history. Tests run only with the command in your own settings, when you ask; a tried change is one line, put back when its tests end. git only through read-only plumbing, refs after <code>--end-of-options</code>. The one fetch is a pull request you click <i>Fetch and review</i> on in margin-gui.</li>
         <li class="reveal"><b>Rules from the base</b><code>.margin/</code> settings come from the commit compared against, so a change cannot loosen its own review.</li>
         <li class="reveal"><b>Clean terminal</b>Escape sequences and bidi controls are stripped before rendering. Questions never go to a plain shell.</li>
+        <li class="reveal"><b>Posts only what you confirm</b>Nothing reaches GitHub unless you click it in margin-gui and confirm the line and text shown; it posts through your own <code>gh</code> login. The agent has no command that posts.</li>
         <li class="reveal"><b>Untrusted text, labelled</b>Commit messages, PR descriptions and repo instructions reach the agent marked as written by someone else.</li>
       </ul>
     </div>

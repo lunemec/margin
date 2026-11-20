@@ -34,20 +34,20 @@
 <text x="16.0" y="237" textLength="931.2" lengthAdjust="spacingAndGlyphs" fill="#79c0ff">── inventory/stock.go · lines 3–6 ───────────────────────────────────────────────────────────────</text>
 <text x="947.2" y="237" textLength="9.6" lengthAdjust="spacingAndGlyphs" fill="#161b22">│</text>
 <text x="44.8" y="258" textLength="28.8" lengthAdjust="spacingAndGlyphs" fill="#7d8590">  3</text>
-<text x="112.0" y="258" textLength="57.6" lengthAdjust="spacingAndGlyphs" fill="#ff7b71">import</text>
-<text x="179.2" y="258" textLength="9.6" lengthAdjust="spacingAndGlyphs" fill="#e6edf3">(</text>
+<text x="112.0" y="258" textLength="57.6" lengthAdjust="spacingAndGlyphs" fill="#cc7833">import</text>
+<text x="169.6" y="258" textLength="19.2" lengthAdjust="spacingAndGlyphs" fill="#e6e1dc"> (</text>
 <text x="947.2" y="258" textLength="9.6" lengthAdjust="spacingAndGlyphs" fill="#161b22">│</text>
 <text x="44.8" y="279" textLength="28.8" lengthAdjust="spacingAndGlyphs" fill="#7d8590">  4</text>
-<text x="150.4" y="279" textLength="76.8" lengthAdjust="spacingAndGlyphs" fill="#a5d6ff">"errors"</text>
+<text x="150.4" y="279" textLength="76.8" lengthAdjust="spacingAndGlyphs" fill="#a5c261">"errors"</text>
 <text x="947.2" y="279" textLength="9.6" lengthAdjust="spacingAndGlyphs" fill="#161b22">│</text>
 <rect x="44.8" y="285" width="28.8" height="21" fill="#58a6ff"/>
 <rect x="83.2" y="285" width="864.0" height="21" fill="#1d4030"/>
 <text x="44.8" y="300" textLength="28.8" lengthAdjust="spacingAndGlyphs" fill="#0d1117" font-weight="bold">  5</text>
 <text x="83.2" y="300" textLength="28.8" lengthAdjust="spacingAndGlyphs" fill="#3fb950" font-weight="bold">▎+ </text>
-<text x="150.4" y="300" textLength="48.0" lengthAdjust="spacingAndGlyphs" fill="#a5d6ff">"fmt"</text>
+<text x="150.4" y="300" textLength="48.0" lengthAdjust="spacingAndGlyphs" fill="#a5c261">"fmt"</text>
 <text x="947.2" y="300" textLength="9.6" lengthAdjust="spacingAndGlyphs" fill="#161b22">│</text>
 <text x="44.8" y="321" textLength="28.8" lengthAdjust="spacingAndGlyphs" fill="#7d8590">  6</text>
-<text x="150.4" y="321" textLength="57.6" lengthAdjust="spacingAndGlyphs" fill="#a5d6ff">"sync"</text>
+<text x="150.4" y="321" textLength="57.6" lengthAdjust="spacingAndGlyphs" fill="#a5c261">"sync"</text>
 <text x="947.2" y="321" textLength="9.6" lengthAdjust="spacingAndGlyphs" fill="#161b22">│</text>
 <text x="947.2" y="342" textLength="9.6" lengthAdjust="spacingAndGlyphs" fill="#161b22">│</text>
 <text x="16.0" y="363" textLength="556.8" lengthAdjust="spacingAndGlyphs" fill="#7d8590"> space: on to your verdict · c comments on the cursor line</text>
