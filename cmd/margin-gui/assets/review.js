@@ -279,10 +279,74 @@ async function gotoTarget(arg) {
   const n = Number(tail);
   const s = state.view.stations[si];
   if (!Number.isInteger(n) || n < 1 || n > s.notes.length) throw new Error(`station ${s.id} has ${s.notes.length} notes`);
-  const note = s.notes[n - 1];
-  focusNote(n - 1);
+  gotoNote(si, n - 1);
+}
+
+function gotoNote(si, ni) {
+  if (si !== state.station) goStation(si);
+  const s = state.view.stations[si];
+  const note = s.notes[ni];
+  focusNote(ni);
   if (note.part >= 0) selectRow(s.id, note.part, note.line, false);
 }
+
+// Mentions of other notes in prose (stop:n) are links. Following one remembers where the reader was,
+// so ctrl+o comes back, like a jump in vim.
+
+hooks.noteRef = (id, n) => {
+  const st = state.view?.stations ?? [];
+  const si = st.findIndex((s) => s.kind === "code" && esc(s.id) === id);
+  if (si < 0) return undefined;
+  return n >= 1 && n <= st[si].notes.length ? { station: si, note: n - 1 } : null;
+};
+
+const jumps = [];
+
+function followRef(si, ni) {
+  const s = state.view?.stations[si];
+  if (!s?.notes[ni]) return;
+  const sel = state.sel && state.sel.station === cur().id ? { ...state.sel } : null;
+  jumps.push({ station: cur().id, note: state.note, sel });
+  if (jumps.length > 50) jumps.shift();
+  gotoNote(si, ni);
+  toast(`${s.id}:${ni + 1} · ctrl+o goes back`);
+}
+
+function jumpBack() {
+  const j = jumps.pop();
+  if (!j) return toast("No jump to go back from.");
+  const si = state.view.stations.findIndex((s) => s.id === j.station);
+  if (si < 0) return;
+  if (si !== state.station) goStation(si);
+  if (j.note >= 0 && j.note < cur().notes.length) focusNote(j.note);
+  if (j.sel) selectRow(j.sel.station, j.sel.part, j.sel.line, false);
+}
+
+// followSelectedRef follows the mentions in the selected note's words in turn, one per press.
+let refTurn = { key: "", i: 0 };
+function followSelectedRef() {
+  const n = selectedNote();
+  if (!n) return toast("No note selected: ] steps to the next one.");
+  const html = prose(n.text) + prose(n.evidence ?? "");
+  const refs = [...html.matchAll(/data-ref="(\d+):(\d+)"/g)].map((m) => [+m[1], +m[2]]);
+  if (!refs.length) return toast("This note mentions no other note.");
+  if (refTurn.key !== n.key) refTurn = { key: n.key, i: 0 };
+  const [si, ni] = refs[refTurn.i++ % refs.length];
+  followRef(si, ni);
+}
+
+document.addEventListener(
+  "click",
+  (e) => {
+    const a = e.target.closest?.("a.ref");
+    if (!a) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const [si, ni] = a.dataset.ref.split(":").map(Number);
+    followRef(si, ni);
+  },
+  true,
+);
 
 async function gotoFileLine(file, line) {
   const st = state.view.stations;
@@ -823,6 +887,7 @@ function noteCard(s, n, i, opts = {}) {
     <div>${prose(n.text)}</div>
     ${n.evidence ? `<div class="ev">Evidence: ${prose(n.evidence)}</div>` : ""}
     ${n.changed ? `<div class="ev">Changed: ${prose(n.changed)}</div>` : ""}
+    ${n.refBy?.length ? `<div class="ev refby">Referenced by ${n.refBy.map((r) => prose(r)).join(", ")}</div>` : ""}
     ${n.problem ? `<div class="ev problems">${esc(n.problem)} — anchored at “${esc(n.at)}”</div>` : ""}
     <div class="note-actions"></div></div>`);
   card.onclick = () => {
@@ -2678,7 +2743,7 @@ async function openExport() {
 
 const helpKeys = [
   ["Walk", [["space", "next step; at the end of a stop, the next stop"], ["b", "previous step"], ["w", "guided walk or whole stop"], ["e", "more of the stop card or overview; on a draft comment, edit it"], ["y n ?", "answer the orient question (overview)"]]],
-  ["Move", [["} {", "next / previous stop"], ["] [", "next / previous note"], ["j k", "move the selected line"], ["J K shift+click", "select a block of lines"], ["ctrl+d ctrl+u", "half a page down / up"], ["g G", "top / bottom"], ["h l 0", "scroll code sideways / back"], ["N", "next new note (or previous match)"]]],
+  ["Move", [["} {", "next / previous stop"], ["] [", "next / previous note"], ["j k", "move the selected line"], ["J K shift+click", "select a block of lines"], ["ctrl+d ctrl+u", "half a page down / up"], ["g G", "top / bottom"], ["h l 0", "scroll code sideways / back"], ["N", "next new note (or previous match)"], ["L", "follow the note the selected note mentions (stop:n); again for the next one"], ["ctrl+o", "back to where you followed a mention from"]]],
   ["Judge", [["1 2 3", "verdict: looks good / needs changes / not sure"], ["space", "mark the selected note read (whole stop)"], ["?", "agree with the selected problem"], ["P", "ask the agent to fix the problems you agreed with and the stops that need changes"], ["x", "dismiss the selected note"], ["enter", "tick the selected call"], ["v", "reveal notes in blind mode"]]],
   ["Talk", [["c", "comment on the selected line (draft); Edit on its card rewords it"], ["S", "send all drafts to the agent"], ["A", "the agent's answers to your comments: read, edit, reply"], ["a", "ask the agent about the selected line"], ["y Y", "copy the note / the whole stop"], ["`", "focus the agent terminal; ctrl+esc leaves it"]]],
   ["See", [["/", "search; n N next / previous"], ["F", "filter notes"], ["n", "show or hide notes"], ["d", "removed lines"], ["s", "side by side"], ["z", "fold unchanged code"], ["+ -", "more / less context on the selected part"], ["f", "whole file of the selected part"], ["t", "tests that run the selected line"], ["T", "run them (the stop's tests when no line is selected)"], ["i", "try a change to the selected line or block: edit or delete it, its tests run against that, then it is put back"], ["o", "show or hide the test output"], ["u U", "next / previous untested change"], ["esc", "end search or spotlight, close an overlay"], ["r", "reload"], ["\\", "show or hide the sidebar"], ["ctrl+k", "go to a repository, worktree, branch or review"], ["ctrl+,", "settings"]]],
@@ -2797,6 +2862,7 @@ export function reviewKey(e) {
     A: () => openAnswers(),
     r: () => reload().then(() => toast("reloaded")),
     H: openHelp,
+    L: followSelectedRef,
   };
   if (e.shiftKey && (k === "ArrowDown" || k === "ArrowUp")) {
     moveCursor(k === "ArrowDown" ? 1 : -1, null, true);
@@ -2804,6 +2870,10 @@ export function reviewKey(e) {
   }
   if (e.ctrlKey && (k === "d" || k === "u")) {
     pageMove(k === "d" ? 1 : -1);
+    return true;
+  }
+  if (e.ctrlKey && k === "o") {
+    jumpBack();
     return true;
   }
   if (e.ctrlKey || e.metaKey || e.altKey) return false;

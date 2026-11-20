@@ -558,6 +558,7 @@ var helpLines = []string{
 	" j k  ↑ ↓   move                 g G    top / bottom",
 	" ] [        next / previous note N      next new note",
 	" } {        next / previous stop tab    list of stops",
+	" L          follow a stop:n the note mentions (again: the next) ctrl+o  back",
 	" /          search the code      n N    next / previous match, esc ends",
 	"",
 	" notes and comments",
@@ -589,7 +590,7 @@ var helpLines = []string{
 	" h l 0      scroll sideways / back to the start",
 	" r q        reload / quit",
 	"",
-	" mouse      click a line, link, note card or stop dot · drag or shift+click a block",
+	" mouse      click a line, link, note card, stop:n mention or stop dot · drag or shift+click a block",
 	"            double click a line for its notes · wheel scrolls the code or the open list",
 }
 

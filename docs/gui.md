@@ -125,6 +125,10 @@ with pictures. In short:
 The page reloads by itself whenever the agent changes the review, so notes appear as it writes them;
 new ones are marked and `N` jumps to them.
 
+A note that mentions another as `stop:n` (`resolve:2`: the second note of stop *resolve*, the address
+`margin goto` takes) shows it as a link: click it, or press `L` on the selected note, to jump there,
+and `ctrl+o` to come back. The note it points at lists it under *Referenced by*.
+
 ## The agent
 
 *Start agent* runs the agent from [Settings](#settings) in a terminal under the review, in the

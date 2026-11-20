@@ -754,6 +754,8 @@ the viewer. Coverage is stored beside the review as `<name>.review.coverage.json
 | `tab` | list of stops |
 | `]` `[` | next / previous note |
 | `N` | next note the agent added while you were reading |
+| `L` | follow a mention of another note (`stop:n`, e.g. `resolve:2`) in the selected note; press again for its next mention. Clicking a mention follows it too |
+| `ctrl+o` | back to where you followed a mention from |
 | `u` `U` | next / previous changed line that no test runs |
 | `enter` on a test in the Tests stop | spotlight it: dim every line it does not run |
 | `T` / `ctrl+t` in the Tests stop | run the test under the cursor / every test |

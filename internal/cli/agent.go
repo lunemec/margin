@@ -114,6 +114,9 @@ little context, opened the viewer beside you and started you with the review fil
    this, what it did before, a small input/result example, which note to read first.
    Notes render **bold** and ` + "`code`" + `. Pass - instead of the text to read it from stdin; do that
    whenever the text contains quotes, since shell quoting silently eats apostrophes.
+   To point at another note, write <station>:<n> (n counts the stop's notes from 1, as goto does),
+   e.g. "the caller is checked in resolve:2". The reader can click it to jump there, and the target
+   note lists yours under "referenced by". margin lint flags a mention of a note that does not exist.
    The viewer marks new notes and the reader jumps to them with N; still say in chat which stop you
    just annotated. A recap stop listing every issue and question is added automatically.
 
