@@ -1,60 +1,72 @@
+/* Dark = Railscasts (the vim colorscheme: Normal #E6E1DC on #141414,
+   keywords #CC7833, functions #FFC66D, strings #A5C261, constants #6D9CBE,
+   types #DA4939, comments #BC9458, Visual #5A647E). */
 :root {
-  --bg: #0d1117;
-  --bg-1: #121820;
-  --bg-2: #161b22;
-  --bg-3: #1f2630;
-  --line: #262d36;
-  --fg: #d7dde4;
-  --fg-dim: #8b949e;
-  --fg-faint: #5b6470;
-  --accent: #7aa2f7;
-  --add-bg: rgba(46, 160, 67, 0.16);
-  --add-mark: #3fb950;
-  --chg-bg: rgba(46, 160, 67, 0.16);
-  --chg-mark: #d29922;
-  --del-bg: rgba(248, 81, 73, 0.14);
-  --del-mark: #f85149;
-  --issue: #f85149;
-  --question: #d29922;
-  --decide: #bc8cff;
-  --ok: #3fb950;
-  --info: #7aa2f7;
-  --nit: #8b949e;
-  --warn: #e3b341;
-  --primary-bg: #1f3a68;
-  --primary-line: #2f5597;
-  --primary-hover: #26467d;
-  --on-primary: #e6edf7;
-  --sel-bg: #1b2a44;
-  --focus-bg: #121c2d;
-  --term-bg: #0a0d12;
-  --ghost-fg: #e8a49f;
-  --good-fg: #a6f0b2;
-  --bad-fg: #ffb3ae;
-  --warn-fg: #f1d38f;
-  --flow: #9ccfd8;
-  --cov: #56d4dd;
-  --ink: #0d1117;
-  --q-bg: #221d10;
-  --info-pill-bg: #2a3a55;
-  --info-pill-fg: #cdd9ee;
-  --match-bg: #6b5a1e;
-  --match-fg: #f5e6b0;
-  --sx-fg: #c9d1d9;
-  --cm-keyword: #ff7b72;
-  --cm-string: #a5d6ff;
-  --cm-number: #79c0ff;
-  --cm-function: #d2a8ff;
-  --cm-type: #ffa657;
-  --cm-comment: #8b949e;
-  --cm-tag: #7ee787;
-  --search-bg: rgba(240, 200, 80, .45);
-  --add-hl: rgba(46, 160, 67, .45);
-  --del-hl: rgba(248, 81, 73, .45);
-  --cursor-line: rgba(227, 179, 65, .07);
-  --cursor-active: rgba(227, 179, 65, .18);
-  --cursor-fill: rgba(227, 179, 65, .75);
-  --selection: rgba(122, 162, 247, .35);
+  --bg: #141414;
+  --bg-1: #1a1a1a;
+  --bg-2: #202020;
+  --bg-3: #2b2b2b;
+  --line: #363636;
+  --fg: #e6e1dc;
+  --fg-dim: #a39e99;
+  --fg-faint: #6e6a66;
+  --accent: #6d9cbe;
+  --add-bg: rgba(165, 194, 97, 0.13);
+  --add-mark: #a5c261;
+  --chg-bg: rgba(165, 194, 97, 0.13);
+  --chg-mark: #cc7833;
+  --del-bg: rgba(218, 73, 57, 0.15);
+  --del-mark: #da4939;
+  --issue: #da4939;
+  --question: #ffc66d;
+  --decide: #b6b3eb;
+  --ok: #a5c261;
+  --info: #6d9cbe;
+  --nit: #999999;
+  --warn: #ffc66d;
+  --primary-bg: #5a647e;
+  --primary-line: #6f7a96;
+  --primary-hover: #66708b;
+  --on-primary: #f6f3e8;
+  --sel-bg: #2c303b;
+  --focus-bg: #242424;
+  --term-bg: #111111;
+  --ghost-fg: #e89a8f;
+  --good-fg: #c6da97;
+  --bad-fg: #f0a59b;
+  --warn-fg: #ffd899;
+  --flow: #9fc2da;
+  --cov: #6d9cbe;
+  --ink: #141414;
+  --q-bg: #262016;
+  --info-pill-bg: #27323d;
+  --info-pill-fg: #c4d7e6;
+  --match-bg: #5a647e;
+  --match-fg: #f6f3e8;
+  --sx-fg: #e6e1dc;
+  --cm-keyword: #cc7833;
+  --cm-string: #a5c261;
+  --cm-number: #a5c261;
+  --cm-function: #ffc66d;
+  --cm-type: #da4939;
+  --cm-comment: #bc9458;
+  --cm-tag: #e8bf6a;
+  --search-bg: rgba(255, 198, 109, .35);
+  --add-hl: rgba(81, 159, 80, .5);
+  --del-hl: rgba(218, 73, 57, .45);
+  --cursor-line: rgba(255, 255, 255, .06);
+  --cursor-active: rgba(255, 198, 109, .16);
+  --cursor-fill: rgba(255, 198, 109, .75);
+  --selection: rgba(90, 100, 126, .6);
+  --sel-ring: rgba(109, 156, 190, .55);
+  --moved-bg: rgba(109, 156, 190, .12);
+  --moved-ghost-bg: rgba(109, 156, 190, .1);
+  --blk-bg: rgba(255, 198, 109, .22);
+  --good-tint: rgba(165, 194, 97, .18);
+  --bad-tint: rgba(218, 73, 57, .16);
+  --unsure-tint: rgba(255, 198, 109, .16);
+  --flag-ring: rgba(218, 73, 57, .55);
+  --issue-tint: rgba(218, 73, 57, .2);
   --cursor-ink: var(--ink);
   color-scheme: dark;
   --mono: "JetBrains Mono", "Fira Code", "DejaVu Sans Mono", ui-monospace, monospace;
@@ -118,6 +130,15 @@
   --cursor-active: rgba(223, 142, 29, .18);
   --cursor-fill: var(--warn);
   --selection: rgba(30, 102, 245, .2);
+  --sel-ring: rgba(122, 162, 247, .55);
+  --moved-bg: rgba(122, 162, 247, .12);
+  --moved-ghost-bg: rgba(122, 162, 247, .1);
+  --blk-bg: rgba(227, 179, 65, .22);
+  --good-tint: rgba(63, 185, 80, .18);
+  --bad-tint: rgba(248, 81, 73, .16);
+  --unsure-tint: rgba(210, 153, 34, .16);
+  --flag-ring: rgba(248, 81, 73, .55);
+  --issue-tint: rgba(248, 81, 73, .2);
   --syntax-operator: #0e5a60;
   --syntax-variable: #803b2f;
   --cursor-ink: var(--ink);
@@ -409,7 +430,7 @@ button.crumb:hover { color: var(--accent); }
 .row .src { white-space: pre; padding-right: 16px; overflow-x: visible; }
 .row.add { background: var(--add-bg); }
 .row.blk { box-shadow: inset 3px 0 0 var(--warn); }
-.row.blk .ln { background: rgba(227, 179, 65, .22); color: var(--fg); }
+.row.blk .ln { background: var(--blk-bg); color: var(--fg); }
 .row.add .mark { background: var(--add-mark); }
 .row.chg { background: var(--chg-bg); }
 .row.chg .mark { background: var(--chg-mark); }
@@ -510,7 +531,7 @@ button.crumb:hover { color: var(--accent); }
   text-align: center;
   font-weight: 700;
 }
-.row.sel { box-shadow: inset 0 0 0 1px rgba(122, 162, 247, .55); }
+.row.sel { box-shadow: inset 0 0 0 1px var(--sel-ring); }
 
 .verdict-bar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 4px 0 16px; }
 .verdict-bar.end { margin: 26px 0 8px; padding-top: 16px; border-top: 1px solid var(--line); }
@@ -518,9 +539,9 @@ button.crumb:hover { color: var(--accent); }
 .vb-hint { color: var(--chg-mark); font-size: 12px; margin-left: 6px; }
 button.vb { padding: 3px 11px; font-size: 12.5px; background: var(--bg-2); }
 button.vb kbd { font: 10.5px var(--mono); color: var(--fg-faint); border: 1px solid var(--line); border-radius: 3px; padding: 0 4px; margin-right: 6px; }
-button.vb.v-good.on { background: rgba(63, 185, 80, .18); border-color: var(--ok); color: var(--good-fg); }
-button.vb.v-changes.on { background: rgba(248, 81, 73, .16); border-color: var(--issue); color: var(--bad-fg); }
-button.vb.v-unsure.on { background: rgba(210, 153, 34, .16); border-color: var(--question); color: var(--warn-fg); }
+button.vb.v-good.on { background: var(--good-tint); border-color: var(--ok); color: var(--good-fg); }
+button.vb.v-changes.on { background: var(--bad-tint); border-color: var(--issue); color: var(--bad-fg); }
+button.vb.v-unsure.on { background: var(--unsure-tint); border-color: var(--question); color: var(--warn-fg); }
 .vdot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--bg-3); border: 1px solid var(--fg-faint); }
 .vdot.v-good { background: var(--ok); border-color: var(--ok); }
 .vdot.v-changes { background: var(--issue); border-color: var(--issue); }
@@ -532,7 +553,7 @@ button.na:hover { color: var(--fg); }
 button.na.on { color: var(--accent); border-color: var(--primary-line); }
 .note.is-read { opacity: .62; }
 .note.is-read:hover { opacity: 1; }
-.note.is-flagged { box-shadow: inset 0 0 0 1px rgba(248, 81, 73, .55); }
+.note.is-flagged { box-shadow: inset 0 0 0 1px var(--flag-ring); }
 .note.is-dismissed { opacity: .4; }
 .note.is-dismissed > div:not(.note-actions) { display: none; }
 
@@ -570,7 +591,7 @@ button.na.on { color: var(--accent); border-color: var(--primary-line); }
 .cp-labels { display: flex; gap: 5px; flex-wrap: wrap; align-items: center; margin-bottom: 8px; }
 button.chip { padding: 1px 10px; border-radius: 12px; font-size: 12px; background: var(--bg-3); color: var(--fg-dim); }
 button.chip.on { background: var(--primary-bg); border-color: var(--primary-line); color: var(--on-primary); }
-button.chip.chip-issue.on { background: rgba(248, 81, 73, .2); border-color: var(--issue); color: var(--bad-fg); }
+button.chip.chip-issue.on { background: var(--issue-tint); border-color: var(--issue); color: var(--bad-fg); }
 .blocking { font-size: 12px; color: var(--fg-dim); margin-left: 8px; display: flex; gap: 4px; align-items: center; }
 .composer textarea, .design textarea {
   width: 100%;
@@ -718,9 +739,9 @@ span.k-question, div.k-question { color: var(--question); }
 span.k-decide, div.k-decide { color: var(--decide); }
 .add-hl { background: var(--add-hl); border-radius: 2px; }
 .del-hl { background: var(--del-hl); text-decoration: line-through; border-radius: 2px; }
-.row.moved { background: rgba(122, 162, 247, .12); }
+.row.moved { background: var(--moved-bg); }
 .row.moved .mark { background: none; color: var(--accent); font-size: 10px; overflow: visible; }
-.row.ghost.moved { background: rgba(122, 162, 247, .1); }
+.row.ghost.moved { background: var(--moved-ghost-bg); }
 .row.ghost.moved .src { color: var(--accent); }
 .m-moved { color: var(--accent); }
 .pick-hint { margin-top: 4px; color: var(--fg-dim); }
