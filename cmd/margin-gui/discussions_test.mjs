@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { agentReply, discussionThreads, nextThread, questionSelection, readReply, unreadReply } from "./assets/discussions.js";
+import { agentReply, discussionThreads, nextThread, questionReply, questionSelection, readReply, unreadReply } from "./assets/discussions.js";
 
 test("next ask stays in its stop and advances through multiple threads on a line", () => {
   const drafts = [
@@ -32,6 +32,25 @@ test("unread state belongs to the review and to this version of the reply", asyn
   const reopened = await import("./assets/discussions.js?reopened");
   assert.equal(reopened.unreadReply("one", thread), false);
   assert.equal(reopened.unreadReply("one", { ...thread, reply: { text: "Updated reply" } }), true);
+});
+
+test("a thread keeps one navigation entry and tracks each saved reply", () => {
+  const question = { id: "root", station: "one", part: 0, at: 2, answer: "Same answer", followUps: [
+    { id: "first", answer: "Same answer" }, { id: "latest", answer: "Newer answer" },
+  ] };
+  const view = { stations: [{ notes: [] }], reader: { comments: [], questions: [] } };
+  const threads = discussionThreads(view, [question], {});
+  assert.deepEqual([...threads.keys()], ["root"]);
+  const thread = threads.get("root");
+  const path = "threads-fixture";
+  assert.equal(questionReply(path, thread).id, "latest");
+  readReply(path, questionReply(path, thread, "root"));
+  assert.equal(unreadReply(path, questionReply(path, thread, "first")), true);
+  readReply(path, questionReply(path, thread, "latest"));
+  assert.equal(questionReply(path, thread).id, "first");
+  readReply(path, questionReply(path, thread, "first"));
+  assert.equal(unreadReply(path, thread), false);
+  assert.equal(questionReply(path, thread).id, "latest");
 });
 
 test("a reader follow-up does not create or update an agent reply", () => {

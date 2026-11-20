@@ -132,6 +132,10 @@ reply appears below its selection and has a **Jump to reply** notification. The 
 toolbar button opens previous replies and lets you retry failed or interrupted questions. The GUI
 saves them locally as JSON and ends outstanding sessions when you quit.
 
+Choose **Reply** on a question to ask a follow-up in the same thread. Margin sends the saved code
+selection and earlier exchanges as context. The full thread is available after restart and can be
+continued from **Questions** even if its original lines have moved.
+
 **Next ask** cycles through your comments and questions in the current stop. **Next reply** cycles
 through agent replies, including replies to comments. New replies are marked on their threads and
 stops until you open them. **Back to reading** returns to your original position after any number

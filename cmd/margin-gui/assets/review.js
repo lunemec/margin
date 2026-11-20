@@ -1,7 +1,7 @@
 import { Events, Clipboard } from "/wails/runtime.js";
 import { api, $, $$, state, hooks, esc, prose, md, oneLine, el, toast, errText, tail, plural, shortList, base, openModal, closeModal } from "./core.js";
 import { openAnswers, hasAnswerDraft } from "./answers.js";
-import { agentReply, discussionThreads, nextThread, questionSelection, readReply, unreadReply } from "./discussions.js";
+import { agentReply, discussionThreads, nextThread, questionReply, questionSelection, questionTurns, readReply, unreadReply } from "./discussions.js";
 import { runTests, tryChange, toggleTestPanel, resetTests, statusOf, statusIcon, testHooks, results } from "./tests.js";
 
 export { closeModal };
@@ -1086,6 +1086,7 @@ function questionCard(q, opts = {}) {
 }
 
 let diffQuestions = [], questionFetch = 0;
+const followUpDrafts = new Map();
 const questionsByRow = new Map();
 const renderedQuestionGroups = new WeakMap();
 const questionRowKey = (station, part, line) => JSON.stringify([station, part, line]);
@@ -1176,9 +1177,13 @@ function syncDiscussionUI() {
   for (const card of $$("[data-discussion]")) {
     const id = card.dataset.discussion, q = threads.get(id);
     if (!q) continue;
+    for (const answer of card.querySelectorAll("[data-question-turn]")) {
+      const turn = questionReply(path, q, answer.dataset.questionTurn);
+      answer.querySelector(".turn-unread").classList.toggle("hidden", !unreadReply(path, turn));
+    }
     card.classList.toggle("unread-reply", unread.has(id));
     let badge = card.querySelector(":scope > .reply-badge");
-    if (unread.has(id) && !badge) {
+    if (q.kind !== "diff" && unread.has(id) && !badge) {
       badge = el(`<span class="badge fresh reply-badge">New reply</span>`);
       card.querySelector(":scope > .ck, :scope > .nk")?.after(badge);
     } else if (!unread.has(id)) badge?.remove();
@@ -1195,14 +1200,17 @@ function syncDiscussionUI() {
   updateDiscussionControls();
 }
 
-function openedReply(q) {
+function openedReply(q, turnID) {
+  if (!q) return;
   const path = state.view.path;
+  const target = q.kind === "diff" ? questionReply(path, q, turnID) : q;
+  if (!target) return;
   if (activeThread === q.id) activeReply = true;
-  if (!unreadReply(path, q)) return updateDiscussionControls();
-  readReply(path, q);
   for (const alert of $$("#question-alerts .question-alert")) {
-    if (alert.dataset.replyReview === path && alert.dataset.replyId === q.id) alert.remove();
+    if (alert.dataset.replyReview === path && alert.dataset.replyId === q.id && alert.dataset.replyTurn === target.id) alert.remove();
   }
+  if (!unreadReply(path, target)) return updateDiscussionControls();
+  readReply(path, target);
   syncDiscussionUI();
 }
 
@@ -1234,7 +1242,7 @@ function beginDiscussionAction() {
   return true;
 }
 
-async function jumpDiscussion(review, id, reply) {
+async function jumpDiscussion(review, id, reply, turnID) {
   if (!beginDiscussionAction()) return false;
   try {
     if (!readingOrigin && state.view && !$("#reviewer").classList.contains("hidden")) {
@@ -1245,9 +1253,10 @@ async function jumpDiscussion(review, id, reply) {
     hooks.showReviewer();
     closeModal();
     const view = state.view;
-    if (!threads.has(id)) await refreshDiffQuestions(view);
+    if (!threads.has(id) || (turnID && !questionReply(review, threads.get(id), turnID))) await refreshDiffQuestions(view);
     const q = state.view === view && threads.get(id);
-    if (!q) {
+    const target = reply && q?.kind === "diff" ? questionReply(review, q, turnID) : null;
+    if (!q || (turnID && !target)) {
       toast("This discussion could not be opened.", true);
       return false;
     }
@@ -1278,11 +1287,11 @@ async function jumpDiscussion(review, id, reply) {
     const idSelector = `[data-discussion="${CSS.escape(id)}"]`;
     const card = $(reply && q.reply?.kind === "note" ? `#station ${idSelector}[data-discussion-reply]` : `#station ${idSelector}:not([data-discussion-reply])`);
     if (card) {
-      focusDiscussion(card, reply && q.reply?.kind === "inline");
-      if (reply) openedReply(q);
+      focusDiscussion(card, target?.id);
+      if (reply) openedReply(q, target?.id);
     } else if (q.kind === "diff") {
-      openDiffQuestions(id);
-      if (reply) openedReply(q);
+      openDiffQuestions(id, target?.id);
+      if (reply) openedReply(q, target?.id);
     } else {
       showSavedDiscussion(q);
       if (reply) openedReply(q);
@@ -1295,19 +1304,29 @@ async function jumpDiscussion(review, id, reply) {
 }
 
 function discussionFocus() {
-  const card = document.activeElement;
-  return card?.matches("#station [data-discussion]") ? { id: card.dataset.discussion, reply: card.hasAttribute("data-discussion-reply") } : null;
+  const active = document.activeElement;
+  const card = active?.closest("#station [data-discussion], .diff-questions-list [data-discussion]");
+  if (!card) return null;
+  const caret = active.matches(".question-follow-up textarea") ? [active.selectionStart, active.selectionEnd] : null;
+  const turn = active.dataset.questionTurn;
+  if (active !== card && !turn && !caret) return null;
+  return { id: card.dataset.discussion, reply: card.hasAttribute("data-discussion-reply"), turn, caret, modal: !!card.closest(".diff-questions-list") };
 }
 
 function restoreDiscussionFocus(focus) {
   if (!focus) return;
   const replySelector = focus.reply ? "[data-discussion-reply]" : ":not([data-discussion-reply])";
-  $(`#station [data-discussion="${CSS.escape(focus.id)}"]${replySelector}`)?.focus({ preventScroll: true });
+  const scope = focus.modal ? ".diff-questions-list" : "#station";
+  const card = $(`${scope} [data-discussion="${CSS.escape(focus.id)}"]${replySelector}`);
+  const active = focus.turn ? card?.querySelector(`[data-question-turn="${CSS.escape(focus.turn)}"]`) :
+    focus.caret ? card?.querySelector(".question-follow-up textarea") : card;
+  active?.focus({ preventScroll: true });
+  if (focus.caret) active?.setSelectionRange(...focus.caret);
 }
 
-function focusDiscussion(card, reply = false) {
-  card.focus({ preventScroll: true });
-  const target = reply && card.querySelector(".diff-question-answer");
+function focusDiscussion(card, turnID) {
+  const target = turnID && card.querySelector(`[data-question-turn="${CSS.escape(turnID)}"]`);
+  (target || card).focus({ preventScroll: true });
   (target || card).scrollIntoView({ block: target ? "start" : "center" });
 }
 
@@ -1367,52 +1386,148 @@ function diffQuestionGroup(qs) {
 }
 
 function diffQuestionCard(q, review = "", selected = false) {
+  const path = review || state.view.path;
   const card = el(`<article class="comment question${review ? " static" : ""}" tabindex="-1">
     ${review ? `<div class="muted small">${esc(questionWhere(q))}</div>` : ""}
-    <span class="ck">You asked</span><span class="badge">${esc(questionStatus[q.status])}</span>
-    <div>${prose(q.text)}</div>
-    ${q.answer ? `<div class="diff-question-answer">${md(q.answer)}</div>` : ""}
-    ${q.problem ? `<div class="muted small">${esc(q.problem)}</div>` : ""}
+    <div class="question-thread"></div>
     ${review ? `<details${selected || q.part < 0 ? " open" : ""}><summary>Selected code</summary><pre class="md-code">${esc(q.excerpt)}</pre></details>` : ""}
     </article>`);
   if (!review) card.dataset.diffQuestion = q.id;
   card.dataset.discussion = q.id;
-  if (review && q.answer) {
-    const answer = card.querySelector(".diff-question-answer");
-    answer.tabIndex = 0;
-    const read = () => { if (state.view?.path === review) openedReply(threads.get(q.id) ?? { ...q, reply: { text: q.answer } }); };
-    answer.addEventListener("click", read);
-    answer.addEventListener("focus", read);
+  const turns = questionTurns(q);
+  const list = card.querySelector(".question-thread");
+  for (const turn of turns) {
+    const item = el(`<section class="question-exchange">
+      <span class="ck">${turn.id === q.id ? "You asked" : "You replied"}</span>
+      ${turn.status === "answered" ? "" : `<span class="badge">${esc(questionStatus[turn.status])}</span>`}
+      <div>${prose(turn.text)}</div>
+      ${turn.problem ? `<div class="muted small">${esc(turn.problem)}</div>` : ""}
+      </section>`);
+    if (turn.answer) {
+      const answer = el(`<div class="diff-question-answer" tabindex="0" data-question-turn="${esc(turn.id)}">
+        <span class="ck">Agent</span><span class="badge fresh turn-unread hidden">New reply</span>${md(turn.answer)}</div>`);
+      const read = () => { if (state.view?.path === path) openedReply(threads.get(q.id), turn.id); };
+      answer.addEventListener("click", read);
+      answer.addEventListener("focus", read);
+      item.append(answer);
+    }
+    list.append(item);
   }
   if (review && !q.answer && !selected) {
     const jump = el(`<button class="small">Jump to question</button>`);
     jump.onclick = () => jumpDiscussion(review, q.id, false);
     card.append(jump);
   }
-  if (q.status === "failed" || q.status === "interrupted") {
+  const latest = turns.at(-1);
+  const actions = el(`<div class="question-thread-actions"></div>`);
+  if (latest.status === "failed" || latest.status === "interrupted") {
     const retry = el(`<button class="small">Retry</button>`);
     retry.onclick = async () => {
-      if (retry.disabled) return;
+      const view = state.view;
+      if (retry.disabled || view?.path !== path) return;
       retry.disabled = true;
       try {
-        await api("Reviews.RetryQuestion", q.id, state.view.version);
-        await refreshDiffQuestions(state.view);
+        await api("Reviews.RetryQuestionTurn", q.id, latest.id, view.version);
+        if (state.view?.path === path) await refreshDiffQuestions(state.view);
       } catch (e) {
         toast(errText(e), true);
       } finally {
         retry.disabled = false;
       }
     };
-    card.append(retry);
+    actions.append(retry);
   }
+  if (q.answer && latest.status !== "queued" && latest.status !== "answering") actions.append(followUpComposer(q.id, path));
+  if (actions.childElementCount) card.append(actions);
   return card;
+}
+
+function followUpComposer(thread, path) {
+  const key = JSON.stringify([path, thread]);
+  const wrapper = el(`<div class="question-follow-up"></div>`);
+  function draw(focus = false) {
+    wrapper.replaceChildren();
+    const draft = followUpDrafts.get(key);
+    if (!draft) {
+      const reply = el(`<button class="small">Reply</button>`);
+      reply.onclick = () => {
+        followUpDrafts.set(key, { text: "", pending: false });
+        draw(true);
+      };
+      wrapper.append(reply);
+      if (focus) reply.focus();
+      return;
+    }
+    const form = el(`<form class="ans-reply" data-follow-up-thread="${esc(thread)}">
+      <textarea rows="3" aria-label="Follow-up question" placeholder="Ask a follow-up"></textarea>
+      <div class="ans-bar"><span class="spacer"></span><button class="small" type="button">Cancel</button>
+      <button class="small primary" type="submit">Send</button></div></form>`);
+    const textarea = form.querySelector("textarea");
+    const [cancel, send] = form.querySelectorAll("button");
+    const updateControls = () => {
+      textarea.readOnly = cancel.disabled = draft.pending;
+      send.disabled = draft.pending || !draft.text.trim();
+    };
+    textarea.value = draft.text;
+    textarea.oninput = () => {
+      draft.text = textarea.value;
+      updateControls();
+    };
+    const close = () => {
+      if (draft.pending) return;
+      followUpDrafts.delete(key);
+      draw(true);
+    };
+    cancel.onclick = close;
+    textarea.onkeydown = (e) => {
+      if (e.isComposing) return;
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        close();
+      } else if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        form.requestSubmit();
+      }
+    };
+    form.onsubmit = async (e) => {
+      e.preventDefault();
+      const view = state.view;
+      if (draft.pending || !draft.text.trim() || view?.path !== path) return;
+      draft.pending = true;
+      updateControls();
+      try {
+        await api("Reviews.FollowUpQuestion", thread, draft.text, view.version);
+        followUpDrafts.delete(key);
+        if (state.view?.path === path) await refreshDiffQuestions(state.view);
+      } catch (e) {
+        if (state.view?.path === path) toast(errText(e), true);
+      } finally {
+        draft.pending = false;
+        if (state.view?.path === path) {
+          for (const current of $$(`[data-follow-up-thread="${CSS.escape(thread)}"]`)) {
+            if (followUpDrafts.has(key)) {
+              current.querySelector("textarea").readOnly = false;
+              current.querySelector('button[type="button"]').disabled = false;
+              current.querySelector('button[type="submit"]').disabled = !draft.text.trim();
+            } else current.remove();
+          }
+        }
+      }
+    };
+    updateControls();
+    wrapper.append(form);
+    if (focus) textarea.focus();
+  }
+  draw();
+  return wrapper;
 }
 
 function renderDiffQuestionList(list, review, id = "") {
   list.replaceChildren(...[...diffQuestions].reverse().map((q) => diffQuestionCard(q, review, q.id === id)));
 }
 
-function openDiffQuestions(id = "") {
+function openDiffQuestions(id = "", turnID) {
   const path = state.view.path;
   const list = el(`<div class="diff-questions-list"></div>`);
   list.dataset.review = path;
@@ -1423,8 +1538,7 @@ function openDiffQuestions(id = "") {
   syncDiscussionUI();
   if (id) {
     const selected = list.children[diffQuestions.length - 1 - diffQuestions.findIndex((q) => q.id === id)];
-    selected?.focus();
-    selected?.scrollIntoView({ block: "nearest" });
+    if (selected) focusDiscussion(selected, turnID);
   }
 }
 
@@ -1437,10 +1551,11 @@ Events.On("question:updated", (ev) => {
     <button class="small">Jump to reply</button><button class="icon" aria-label="Dismiss answer notification">✕</button></div>`);
   alert.dataset.replyReview = q.review;
   alert.dataset.replyId = q.id;
+  alert.dataset.replyTurn = q.turn ?? q.id;
   const [jump, dismiss] = alert.querySelectorAll("button");
   jump.onclick = async () => {
     jump.disabled = true;
-    if (await jumpDiscussion(q.review, q.id, true)) alert.remove();
+    if (await jumpDiscussion(q.review, q.id, true, alert.dataset.replyTurn)) alert.remove();
     else jump.disabled = false;
   };
   dismiss.onclick = () => alert.remove();
@@ -3123,7 +3238,7 @@ export function reviewKey(e) {
   if (!state.view) return false;
   const k = e.key;
   const s = cur();
-  if ((k === "Enter" || k === " ") && e.target.closest?.("button, summary")?.closest(".discussion-nav, .jump-reply, .diff-questions-list, .answers")) return false;
+  if ((k === "Enter" || k === " ") && e.target.closest?.("button, summary")?.closest(".discussion-nav, .jump-reply, .question-thread-actions, .diff-questions-list, .answers")) return false;
   if (k === "Tab") return false;
   if (document.querySelector(".modal-back")) return modalKey(e);
   const ov = s.kind === "overview" && guided();

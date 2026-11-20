@@ -661,6 +661,11 @@ pre.flow { font: 12.5px/1.5 var(--mono); color: var(--flow); background: var(--b
 .comment.question .ck { color: var(--question); }
 .diff-question-answer { border-top: 1px solid var(--line); margin-top: 8px; padding-top: 4px; }
 .diff-question-answer > :first-child { margin-top: 4px; }
+.question-exchange + .question-exchange { border-top: 1px solid var(--line); margin-top: 8px; padding-top: 8px; }
+.question-thread-actions { margin-top: 6px; }
+.question-follow-up { margin-top: 6px; }
+.turn-unread { margin-left: 6px; }
+.diff-question-answer:focus-visible, .question-follow-up textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .comment.question > button, .comment.question > details { margin-top: 6px; }
 .discussion-nav { display: inline-flex; align-items: center; gap: 4px; }
 .modal-head .discussion-nav { margin-right: 8px; }

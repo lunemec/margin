@@ -24,14 +24,29 @@ export function discussionThreads(view, questions, sections) {
   const threads = new Map();
   for (const [kind, items] of [["comment", view.reader.comments], ["question", view.reader.questions], ["diff", questions]]) {
     for (const q of items) {
+      if (kind === "diff") {
+        const replies = questionTurns(q).filter((t) => t.answer).map((t) => ({ ...t, reply: { kind: "inline", text: t.answer } }));
+        threads.set(q.id, { ...q, kind, replies, reply: replies.at(-1)?.reply });
+        continue;
+      }
       const section = agentReply(sections[q.id]);
       const note = notes.get(q.id);
-      const reply = q.answer ? { kind: "inline", text: q.answer } :
-        section ? { kind: "section", text: section } : note ? { kind: "note", text: note } : null;
+      const reply = section ? { kind: "section", text: section } : note ? { kind: "note", text: note } : null;
       threads.set(q.id, { ...q, kind, reply });
     }
   }
   return threads;
+}
+
+export const questionTurns = (q) => [q, ...(q.followUps ?? [])];
+
+export function questionReply(path, thread, id) {
+  const replies = thread?.replies ?? [];
+  if (id) return replies.find((turn) => turn.id === id);
+  for (let i = replies.length - 1; i >= 0; i--) {
+    if (unreadReply(path, replies[i])) return replies[i];
+  }
+  return replies.at(-1);
 }
 
 export function questionSelection(part, from, end) {
@@ -68,6 +83,7 @@ function replyVersion(text) {
 }
 
 export function unreadReply(path, q) {
+  if (q?.replies) return q.replies.some((turn) => unreadReply(path, turn));
   if (!q?.reply) return false;
   const key = seenKey(path, q);
   if (!seen.has(key)) {
