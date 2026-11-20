@@ -1,6 +1,7 @@
 import { Events, Clipboard } from "/wails/runtime.js";
-import { api, $, $$, state, hooks, esc, prose, oneLine, el, toast, errText, tail, plural, shortList, base, openModal, closeModal } from "./core.js";
-import { openAnswers } from "./answers.js";
+import { api, $, $$, state, hooks, esc, prose, md, oneLine, el, toast, errText, tail, plural, shortList, base, openModal, closeModal } from "./core.js";
+import { openAnswers, hasAnswerDraft } from "./answers.js";
+import { discussionThreads, nextThread, readReply, unreadReply } from "./discussions.js";
 import { runTests, tryChange, toggleTestPanel, resetTests, statusOf, statusIcon, testHooks, results } from "./tests.js";
 
 export { closeModal };
@@ -21,18 +22,18 @@ const partData = (s, pi) => state.parts[partKey(s, pi)] ?? s.parts[pi];
 
 // Loading
 
-export function openReviewFile(path, restore = false) {
-  return openReview("", "", false, path, restore);
+export function openReviewFile(path, restore = false, browsing = false) {
+  return openReview("", "", false, path, restore, browsing);
 }
 
 let openingReview = Promise.resolve();
-export function openReview(dir, arg, fresh = false, file = "", restore = false) {
-  const opened = openingReview.then(() => loadReview(dir, arg, fresh, file, restore));
+export function openReview(dir, arg, fresh = false, file = "", restore = false, browsing = false) {
+  const opened = openingReview.then(() => loadReview(dir, arg, fresh, file, restore, browsing));
   openingReview = opened.catch(() => {});
   return opened;
 }
 
-async function loadReview(dir, arg, fresh, file, restore) {
+async function loadReview(dir, arg, fresh, file, restore, browsing) {
   const previous = state.opened;
   const scroll = $("#station").scrollTop;
   if (previous) previous.restoringPosition = true;
@@ -59,9 +60,15 @@ async function loadReview(dir, arg, fresh, file, restore) {
   const active = state.opened;
   active.restoringPosition = true;
   if (!same) {
+    if (!browsing) readingOrigin = null;
+    activeThread = "";
+    commentSections = {};
+    threads = new Map();
     resetTests();
     endTry();
     state.view = null;
+    diffQuestions = [];
+    questionsByRow.clear();
     Object.assign(state, { station: 0, note: -1, step: 0, sel: null, compose: null, editing: null, block: null, parts: {}, expand: {}, whole: {}, around: {}, known: null,
       query: "", spot: -1, spotLines: null, filter: 0 });
     state.fresh = new Set();
@@ -73,7 +80,7 @@ async function loadReview(dir, arg, fresh, file, restore) {
     active.restoringPosition = false;
     return false;
   }
-  if (!same && !restoreReadingPosition(position)) {
+  if (!same && !await restoreReadingPosition(position)) {
     // Like the terminal viewer: the first code stop, unless a guided walk starts fresh at the overview.
     const atOverview = guided() && !reader().visited.length;
     if (!atOverview && state.view.stations.length > 1) goStation(1);
@@ -129,12 +136,15 @@ function applyView(view, top = false) {
     }
   }
   state.view = view;
+  indexDiscussions();
   const i = view.stations.findIndex((s) => s.id === prevId);
   state.station = i >= 0 ? i : Math.min(state.station, view.stations.length - 1);
   const scroll = $("#station").scrollTop;
   renderReview();
   if (!top) $("#station").scrollTop = scroll;
   refreshParts();
+  refreshDiffQuestions(view);
+  refreshCommentReplies(view);
 }
 
 function applyReader(update) {
@@ -142,11 +152,14 @@ function applyReader(update) {
   if (!v || update.path !== v.path || update.readerRevision <= v.readerRevision) return;
   v.readerRevision = update.readerRevision;
   if (JSON.stringify(v.reader) === JSON.stringify(update.reader) && JSON.stringify(v.counts) === JSON.stringify(update.counts)) return;
+  const sent = sentComments(v);
   v.reader = update.reader;
   v.counts = update.counts;
+  indexDiscussions();
   const scroll = $("#station").scrollTop;
   renderReview();
   $("#station").scrollTop = scroll;
+  if (sent !== sentComments(v)) refreshCommentReplies(v);
 }
 
 // trackFresh marks notes that appeared since the last load, so notes the agent adds elsewhere are not missed.
@@ -359,7 +372,7 @@ export function renderReview() {
     const vd = verdicts.find((x) => x.id === reader().verdicts?.[s.id]);
     const visited = !vd && reader().visited.includes(s.id) && s.kind === "code";
     const item = el(`<div class="st${i === state.station ? " on" : ""}"><span class="num">${vd ? `<span class="vdot ${vd.cls}" title="${vd.label}"></span>` : visited ? `<span class="vdot half" title="visited"></span>` : num}</span>
-      <span class="t">${esc(s.title || s.id)}</span><div class="meta">${meta.join("")}</div></div>`);
+      <span class="t">${esc(s.title || s.id)}</span><div class="meta">${meta.join("")}<span class="m-fresh hidden" data-reply-stop="${esc(s.id)}"></span></div></div>`);
     item.onclick = () => goStation(i);
     nav.append(item);
   });
@@ -403,6 +416,10 @@ function renderToolbar() {
   if (s?.kind === "code" && state.view.coverage && s.cov?.missed) btn("Next untested", "The next changed line no test runs (u, U goes back)", false, () => nextUntested(1));
   if (state.spot >= 0) btn("Spotlight: " + esc(state.view.coverage?.tests[state.spot]?.label ?? "") + " ✕", "End the spotlight (esc)", true, endSpot, "warn");
   if (reader().comments.some((c) => !c.draft)) btn("Answers", "The agent's answers to your comments, to read, edit or reply to (A)", false, () => openAnswers());
+  const questions = btn("Questions", "Your diff questions and the agent's replies", false, () => openDiffQuestions());
+  questions.id = "diff-questions-btn";
+  questions.classList.toggle("hidden", !diffQuestions.length);
+  tb.append(discussionNavigation());
   btn("Export", "Your comments, flagged problems and calls, to post yourself", false, openExport);
   btn("?", "All keys (H)", false, openHelp);
 }
@@ -432,6 +449,7 @@ function codeStops() {
 
 export function goStation(i, noteIdx = -1, step = 0) {
   if (!state.view) return;
+  if (!discussionBusy) activeThread = "";
   state.station = Math.max(0, Math.min(i, state.view.stations.length - 1));
   state.note = noteIdx;
   state.step = step;
@@ -450,11 +468,14 @@ export function goStation(i, noteIdx = -1, step = 0) {
   document.querySelector("#stations .st.on")?.scrollIntoView({ block: "nearest" });
   if (noteIdx >= 0) focusNote(noteIdx);
   else if (walking()) enterStep();
-  refreshParts();
+  return refreshParts();
 }
 
 function renderStation() {
+  const focus = discussionFocus();
   drawStation();
+  syncDiscussionUI();
+  restoreDiscussionFocus(focus);
   covHint();
   queueMicrotask(() => queueReadingPosition());
 }
@@ -640,7 +661,7 @@ function codeRows(s, pi, from, to, opts = {}) {
     const moved = r.mv ? " moved" : "";
     const row = el(`<div class="row ${r.k ?? ""}${moved}${notes.length ? " has-note" : ""}${sel ? " sel" : ""}${blk ? " blk" : ""}${dim ? " dim" : ""}" data-part="${pi}" data-line="${line}"${r.mv ? ` title="moved here unchanged from ${esc(r.mv)}"` : ""}>
       <span class="mark">${r.mv ? "→" : ""}</span><span class="cov ${ccls}" title="${r.cov === "run" ? `${r.tn} tests run this line · click lists them (t)` : r.cov === "missed" ? "changed, and no test runs it" : ""}">${cm}</span>
-      <span class="ln" title="Comment on this line (c)">${badge}${r.n}</span>${left}<span class="src${split ? " right" : ""}">${src}</span></div>`);
+      <span class="ln" title="Comment or ask the agent">${badge}${r.n}</span>${left}<span class="src${split ? " right" : ""}">${src}</span></div>`);
     if (r.cov === "run") {
       const cv = row.querySelector(".cov");
       cv.onmouseenter = async () => {
@@ -662,15 +683,17 @@ function codeRows(s, pi, from, to, opts = {}) {
     };
     row.onmousedown = (e) => e.shiftKey && e.preventDefault();
     code.append(row);
+    const qs = questionsByRow.get(questionRowKey(s.id, pi, line));
+    if (qs) code.append(diffQuestionGroup(qs));
     for (const i of notes) {
       shown.add(i);
       code.append(noteCard(s, s.notes[i], i));
     }
     for (const c of reader().comments) {
-      if (c.station === s.id && c.file === p.file && c.line === r.n && (c.side === "base") === !!p.base && !c.resolved) code.append(commentCard(c));
+      if (c.station === s.id && c.part === pi && c.at === line && (!c.resolved || activeThread === c.id || unreadReply(state.view.path, threads.get(c.id)))) code.append(commentCard(c));
     }
     for (const q of reader().questions) {
-      if (q.station === s.id && q.file === p.file && q.line === r.n && (q.side === "base") === !!p.base && !q.answered) code.append(questionCard(q));
+      if (q.station === s.id && q.part === pi && q.at === line && (!q.answered || activeThread === q.id || unreadReply(state.view.path, threads.get(q.id)))) code.append(questionCard(q));
     }
     const cp = state.compose;
     if (cp && cp.station === s.id && cp.part === pi && cp.line === line) code.append(composer(s, p));
@@ -805,10 +828,17 @@ function noteCard(s, n, i, opts = {}) {
     ${n.changed ? `<div class="ev">Changed: ${prose(n.changed)}</div>` : ""}
     ${n.problem ? `<div class="ev problems">${esc(n.problem)} — anchored at “${esc(n.at)}”</div>` : ""}
     <div class="note-actions"></div></div>`);
+  if (n.qid) {
+    card.dataset.discussion = n.qid;
+    card.dataset.discussionReply = "";
+    card.tabIndex = -1;
+  }
   card.onclick = () => {
     state.fresh.delete(n.key);
     if (opts.jump) return opts.jump();
     focusNote(i);
+    const thread = threads.get(n.qid);
+    if (thread?.reply?.kind === "note") openedReply(thread);
   };
   const actions = card.querySelector(".note-actions");
   const btn = (label, title, on, fn) => {
@@ -947,21 +977,11 @@ function yank(all) {
 
 function commentCard(c, opts = {}) {
   const body = c.text.replace(/^[a-z]+(?: \([a-z, -]+\))?: /, "");
-  const card = el(`<div class="comment${c.draft ? " draft" : ""}${c.blocking ? " blocking" : ""}${opts.static ? " static" : ""}">
+  const card = el(`<div class="comment${c.draft ? " draft" : ""}${c.blocking ? " blocking" : ""}${opts.static ? " static" : ""}" data-discussion="${esc(c.id)}" tabindex="-1">
     ${opts.where ? `<div class="muted small">${esc(c.file)}:${c.line}</div>` : ""}
     <span class="ck">${esc(c.id)} · you${c.label ? " · " + esc(c.label) : ""}${c.blocking ? " (blocking)" : ""}</span>
     <span class="badge">${c.fix ? (c.resolved ? "fixed" : "fix sent") : c.resolved ? "resolved" : c.draft ? "draft" : "sent"}</span>
     <div>${prose(body)}</div></div>`);
-  if (!c.draft) {
-    const ans = el(`<button class="na" title="Read the agent's answer, reply to it (A)">Answer</button>`);
-    ans.onclick = (e) => {
-      e.stopPropagation();
-      openAnswers(c.id);
-    };
-    const actions = el(`<div class="note-actions"></div>`);
-    actions.append(ans);
-    card.append(actions);
-  }
   if (c.draft && state.editing?.id === c.id) {
     card.querySelector(":scope > div:last-of-type").replaceWith(editBox(c));
     card.classList.add("editing");
@@ -1050,7 +1070,7 @@ function editKey(s, sel) {
 }
 
 function questionCard(q, opts = {}) {
-  const card = el(`<div class="comment question${opts.static ? " static" : ""}">
+  const card = el(`<div class="comment question${opts.static ? " static" : ""}" data-discussion="${esc(q.id)}" tabindex="-1">
     ${opts.where ? `<div class="muted small">${esc(q.file)}:${q.line}</div>` : ""}
     <span class="ck">${esc(q.id)} · you asked</span><span class="badge">${q.answered ? "answered" : state.agentLive ? "waiting for the agent" : "saved; start the agent"}</span>
     <div>${prose(q.text)}</div></div>`);
@@ -1058,10 +1078,355 @@ function questionCard(q, opts = {}) {
   return card;
 }
 
+let diffQuestions = [], questionFetch = 0;
+const questionsByRow = new Map();
+const renderedQuestionGroups = new WeakMap();
+const questionRowKey = (station, part, line) => JSON.stringify([station, part, line]);
+const rowAt = (part, line) => $(`#station .row[data-part="${part}"][data-line="${line}"]`);
+const questionLastLine = (q) => q.at + q.end - q.line;
+const questionWhere = (q) => `${q.file}:${q.line}${q.end > q.line ? `–${q.end}` : ""}${q.side === "base" ? " (base)" : ""}`;
+const questionStatus = { queued: "Queued", answering: "Answering", answered: "Answered", failed: "Failed", interrupted: "Interrupted" };
+
+let commentSections = {}, threads = new Map(), replyFetch = 0;
+let readingOrigin = null, activeThread = "", activeReply = false, discussionBusy = false;
+const sentComments = (view) => view.reader.comments.filter((c) => !c.draft).map((c) => c.id).join(",");
+
+function indexDiscussions() {
+  threads = discussionThreads(state.view, diffQuestions, commentSections);
+  if (activeThread && !threads.has(activeThread)) activeThread = "";
+}
+
+async function refreshCommentReplies(view) {
+  const request = ++replyFetch;
+  if (!sentComments(view)) {
+    commentSections = {};
+    return;
+  }
+  try {
+    const { sections } = await api("Reviews.Answers");
+    if (state.view !== view || request !== replyFetch || JSON.stringify(sections) === JSON.stringify(commentSections)) return;
+    commentSections = sections;
+    indexDiscussions();
+    syncDiscussionUI();
+  } catch (e) {
+    if (state.view === view && request === replyFetch) toast(errText(e), true);
+  }
+}
+
+function discussionNavigation() {
+  const bar = el(`<span class="discussion-nav hidden">
+    <button class="small" data-next-ask title="Next comment or question in this stop">Next ask</button>
+    <button class="small" data-next-reply title="Next reply in this stop">Next reply</button>
+    <button class="small" data-reading-back>Back to reading</button></span>`);
+  bar.querySelector("[data-next-ask]").onclick = () => nextDiscussion(false);
+  bar.querySelector("[data-next-reply]").onclick = () => nextDiscussion(true);
+  bar.querySelector("[data-reading-back]").onclick = backToReading;
+  return bar;
+}
+
+function addDiscussionNavigation(modal) {
+  const head = modal.querySelector(".modal-head");
+  head.insertBefore(discussionNavigation(), head.querySelector("button"));
+}
+
+function nextDiscussionTarget(replies) {
+  const s = cur();
+  if (s?.kind !== "code" || (activeThread && threads.get(activeThread)?.station !== s.id)) return null;
+  const rank = (part, line) => !guided() ? 0 : part < 0 ? Infinity :
+    [line, s.parts[part]?.start].map((at) => stepOf(s, part, at)).find((i) => i >= 0) ?? Infinity;
+  const sel = state.sel?.station === s.id ? state.sel : null;
+  const from = sel ? [rank(sel.part, sel.line), sel.part, sel.line] : [guided() ? state.step : 0, -1, -1];
+  return nextThread(threads, s.id, replies, replies && !activeReply ? "" : activeThread, from, rank);
+}
+
+function updateDiscussionControls() {
+  const asks = [...threads.values()].some((q) => q.station === cur()?.id);
+  const canAsk = asks && !!nextDiscussionTarget(false);
+  const canReply = asks && !!nextDiscussionTarget(true);
+  for (const bar of $$(".discussion-nav")) {
+    bar.classList.toggle("hidden", !asks && !readingOrigin);
+    const back = bar.querySelector("[data-reading-back]");
+    back.classList.toggle("hidden", !readingOrigin);
+    back.disabled = discussionBusy;
+    bar.querySelector("[data-next-ask]").disabled = !canAsk || discussionBusy;
+    bar.querySelector("[data-next-reply]").disabled = !canReply || discussionBusy;
+  }
+}
+
+function syncDiscussionUI() {
+  if (!state.view) return;
+  const path = state.view.path;
+  const unread = new Set(), stops = new Map();
+  for (const q of threads.values()) if (unreadReply(path, q)) {
+    unread.add(q.id);
+    stops.set(q.station, (stops.get(q.station) ?? 0) + 1);
+  }
+  for (const badge of $$("[data-reply-stop]")) {
+    const n = stops.get(badge.dataset.replyStop) ?? 0;
+    badge.classList.toggle("hidden", !n);
+    badge.textContent = n === 1 ? "New reply" : `${n} new replies`;
+  }
+  for (const card of $$("[data-discussion]")) {
+    const id = card.dataset.discussion, q = threads.get(id);
+    if (!q) continue;
+    card.classList.toggle("unread-reply", unread.has(id));
+    let badge = card.querySelector(":scope > .reply-badge");
+    if (unread.has(id) && !badge) {
+      badge = el(`<span class="badge fresh reply-badge">New reply</span>`);
+      card.querySelector(":scope > .ck, :scope > .nk")?.after(badge);
+    } else if (!unread.has(id)) badge?.remove();
+    const action = card.querySelector(":scope > .jump-reply");
+    if (q.reply && !action) {
+      const button = el(`<button class="small jump-reply">Jump to reply</button>`);
+      button.onclick = (e) => {
+        e.stopPropagation();
+        jumpDiscussion(path, id, true);
+      };
+      card.append(button);
+    } else if (!q.reply) action?.remove();
+  }
+  updateDiscussionControls();
+}
+
+function openedReply(q) {
+  const path = state.view.path;
+  if (activeThread === q.id) activeReply = true;
+  readReply(path, q);
+  for (const alert of $$("#question-alerts .question-alert")) {
+    if (alert.dataset.replyReview === path && alert.dataset.replyId === q.id) alert.remove();
+  }
+  syncDiscussionUI();
+}
+
+function nextDiscussion(replies) {
+  const q = nextDiscussionTarget(replies);
+  if (q) return jumpDiscussion(state.view.path, q.id, replies);
+}
+
+function beginDiscussionAction() {
+  if (discussionBusy) return false;
+  if (state.compose?.text.trim() || state.compose?.pending || (state.editing && state.editing.text !== state.editing.was) || state.trying || hasAnswerDraft()) {
+    toast("Save or cancel your current edit before jumping.");
+    return false;
+  }
+  discussionBusy = true;
+  updateDiscussionControls();
+  return true;
+}
+
+async function jumpDiscussion(review, id, reply) {
+  if (!beginDiscussionAction()) return false;
+  try {
+    if (!readingOrigin && state.view && !$("#reviewer").classList.contains("hidden")) {
+      queueReadingPosition(0, true);
+      readingOrigin = captureReadingOrigin();
+    }
+    if (state.view?.path !== review && !await openReviewFile(review, false, true)) return false;
+    hooks.showReviewer();
+    closeModal();
+    const view = state.view;
+    if (!threads.has(id)) await refreshDiffQuestions(view);
+    const q = state.view === view && threads.get(id);
+    if (!q) {
+      toast("This discussion could not be opened.", true);
+      return false;
+    }
+    activeThread = id;
+    activeReply = false;
+    const i = view.stations.findIndex((s) => s.id === q.station);
+    if (i >= 0) {
+      const s = view.stations[i];
+      const part = s.parts[q.part];
+      const last = q.kind === "diff" ? questionLastLine(q) : q.at;
+      const step = guided() && part ? stepOf(s, q.part, last) : 0;
+      const before = step < 0 ? stepOf(s, q.part, part.start) : step;
+      await goStation(i, -1, Math.max(0, before));
+      if (part && (!rowAt(q.part, q.at) || !rowAt(q.part, last))) await loadPart(s, q.part, 0, true);
+      if (state.view?.path !== review || cur()?.id !== s.id) return false;
+      if (part && rowAt(q.part, q.at)) {
+        selectRow(s.id, q.part, q.at, false);
+        if (last > q.at) {
+          state.block = { station: s.id, part: q.part, anchor: q.at, from: q.at, to: last };
+          markBlock();
+        }
+      }
+    }
+    if (reply && q.reply?.kind === "section" && await openAnswers(id, discussionNavigation())) {
+      openedReply(q);
+      return true;
+    }
+    const idSelector = `[data-discussion="${CSS.escape(id)}"]`;
+    const card = $(reply && q.reply?.kind === "note" ? `#station ${idSelector}[data-discussion-reply]` : `#station ${idSelector}:not([data-discussion-reply])`);
+    if (card) {
+      focusDiscussion(card, reply && q.reply?.kind === "inline");
+      if (reply) openedReply(q);
+    } else if (q.kind === "diff") {
+      openDiffQuestions(id);
+      if (reply) openedReply(q);
+    } else {
+      showSavedDiscussion(q);
+      if (reply) openedReply(q);
+    }
+    return true;
+  } finally {
+    discussionBusy = false;
+    updateDiscussionControls();
+  }
+}
+
+function discussionFocus() {
+  const card = document.activeElement;
+  return card?.matches("#station [data-discussion]") ? { id: card.dataset.discussion, reply: card.hasAttribute("data-discussion-reply") } : null;
+}
+
+function restoreDiscussionFocus(focus) {
+  if (!focus) return;
+  const replySelector = focus.reply ? "[data-discussion-reply]" : ":not([data-discussion-reply])";
+  $(`#station [data-discussion="${CSS.escape(focus.id)}"]${replySelector}`)?.focus({ preventScroll: true });
+}
+
+function focusDiscussion(card, reply = false) {
+  card.focus({ preventScroll: true });
+  const target = reply && card.querySelector(".diff-question-answer");
+  (target || card).scrollIntoView({ block: target ? "start" : "center" });
+}
+
+function showSavedDiscussion(q) {
+  const card = el(`<div class="saved-discussion" data-discussion="${esc(q.id)}" tabindex="-1">
+    <div class="muted small">${esc(questionWhere(q))}</div><p>${prose(q.body ?? q.text)}</p>
+    ${q.needle ? `<pre class="md-code">${esc(q.needle)}</pre>` : ""}
+    ${q.reply ? `<div class="diff-question-answer">${md(q.reply.text)}</div>` : ""}</div>`);
+  addDiscussionNavigation(openModal(q.kind === "comment" ? "Comment" : "Question", card, "narrow"));
+  syncDiscussionUI();
+  focusDiscussion(card);
+}
+
+async function refreshDiffQuestions(view) {
+  if (!view) return;
+  const request = ++questionFetch;
+  try {
+    const questions = await api("Reviews.DiffQuestions", view.version);
+    if (state.view !== view || request !== questionFetch || JSON.stringify(questions) === JSON.stringify(diffQuestions)) return;
+    const focus = discussionFocus();
+    diffQuestions = questions;
+    indexDiscussions();
+    questionsByRow.clear();
+    for (const q of questions) {
+      if (q.part < 0) continue;
+      const key = questionRowKey(q.station, q.part, questionLastLine(q));
+      if (!questionsByRow.has(key)) questionsByRow.set(key, []);
+      questionsByRow.get(key).push(q);
+    }
+    $("#diff-questions-btn")?.classList.toggle("hidden", !questions.length);
+    const groups = new Map($$("#station .diff-question-row").map((g) => [g.dataset.questionRow, g]));
+    for (const [key, group] of groups) if (!questionsByRow.has(key)) group.remove();
+    for (const [key, qs] of questionsByRow) {
+      const q = qs[0];
+      if (q.station !== cur()?.id) continue;
+      const group = groups.get(key);
+      if (group) {
+        if (JSON.stringify(renderedQuestionGroups.get(group)) !== JSON.stringify(qs)) group.replaceWith(diffQuestionGroup(qs));
+      } else rowAt(q.part, questionLastLine(q))?.after(diffQuestionGroup(qs));
+    }
+    const list = $(".diff-questions-list");
+    if (list?.dataset.review === view.path) renderDiffQuestionList(list, view.path, list.dataset.selected);
+    syncDiscussionUI();
+    restoreDiscussionFocus(focus);
+  } catch (e) {
+    if (state.view === view && request === questionFetch && !errText(e).includes("the review changed")) toast(errText(e), true);
+  }
+}
+
+function diffQuestionGroup(qs) {
+  const q = qs[0];
+  const group = el(`<div class="diff-question-row"></div>`);
+  group.dataset.questionRow = questionRowKey(q.station, q.part, questionLastLine(q));
+  renderedQuestionGroups.set(group, qs);
+  group.append(...qs.map((item) => diffQuestionCard(item)));
+  return group;
+}
+
+function diffQuestionCard(q, review = "", selected = false) {
+  const card = el(`<article class="comment question${review ? " static" : ""}" tabindex="-1">
+    ${review ? `<div class="muted small">${esc(questionWhere(q))}</div>` : ""}
+    <span class="ck">You asked</span><span class="badge">${esc(questionStatus[q.status])}</span>
+    <div>${prose(q.text)}</div>
+    ${q.answer ? `<div class="diff-question-answer">${md(q.answer)}</div>` : ""}
+    ${q.problem ? `<div class="muted small">${esc(q.problem)}</div>` : ""}
+    ${review ? `<details${selected || q.part < 0 ? " open" : ""}><summary>Selected code</summary><pre class="md-code">${esc(q.excerpt)}</pre></details>` : ""}
+    </article>`);
+  if (!review) card.dataset.diffQuestion = q.id;
+  card.dataset.discussion = q.id;
+  if (review && !q.answer && !selected) {
+    const jump = el(`<button class="small">Jump to question</button>`);
+    jump.onclick = () => jumpDiscussion(review, q.id, false);
+    card.append(jump);
+  }
+  if (q.status === "failed" || q.status === "interrupted") {
+    const retry = el(`<button class="small">Retry</button>`);
+    retry.onclick = async () => {
+      if (retry.disabled) return;
+      retry.disabled = true;
+      try {
+        await api("Reviews.RetryQuestion", q.id, state.view.version);
+        await refreshDiffQuestions(state.view);
+      } catch (e) {
+        toast(errText(e), true);
+      } finally {
+        retry.disabled = false;
+      }
+    };
+    card.append(retry);
+  }
+  return card;
+}
+
+function renderDiffQuestionList(list, review, id = "") {
+  list.replaceChildren(...[...diffQuestions].reverse().map((q) => diffQuestionCard(q, review, q.id === id)));
+}
+
+function openDiffQuestions(id = "") {
+  const path = state.view.path;
+  const list = el(`<div class="diff-questions-list"></div>`);
+  list.dataset.review = path;
+  list.dataset.selected = id;
+  renderDiffQuestionList(list, path, id);
+  const modal = openModal("Questions you asked", list, "narrow");
+  if (id) addDiscussionNavigation(modal);
+  syncDiscussionUI();
+  if (id) {
+    const selected = list.children[diffQuestions.length - 1 - diffQuestions.findIndex((q) => q.id === id)];
+    selected?.focus();
+    selected?.scrollIntoView({ block: "nearest" });
+  }
+}
+
+Events.On("question:updated", (ev) => {
+  const q = ev.data;
+  if (state.view?.path === q.review) refreshDiffQuestions(state.view);
+  if (q.status === "failed" && q.problem) toast(q.problem, true);
+  if (q.status !== "answered") return;
+  const alert = el(`<div class="question-alert"><span>Answer ready · ${esc(base(q.file))}:${q.line}</span>
+    <button class="small">Jump to reply</button><button class="icon" aria-label="Dismiss answer notification">✕</button></div>`);
+  alert.dataset.replyReview = q.review;
+  alert.dataset.replyId = q.id;
+  const [jump, dismiss] = alert.querySelectorAll("button");
+  jump.onclick = async () => {
+    jump.disabled = true;
+    if (await jumpDiscussion(q.review, q.id, true)) alert.remove();
+    else jump.disabled = false;
+  };
+  dismiss.onclick = () => alert.remove();
+  $("#question-alerts").prepend(alert);
+});
+
 // Selecting lines, commenting and asking
 
 // extend grows a block of lines from the selected one, to try a change to all of them at once.
 function selectRow(station, part, line, compose, extend) {
+  if (!discussionBusy) activeThread = "";
+  const range = state.block;
+  const askRange = range?.station === station && range.part === part && line >= range.from && line <= range.to ? range : null;
   const from = state.sel;
   if (extend && from && from.station === station && from.part === part) {
     const anchor = state.block?.station === station && state.block.part === part ? state.block.anchor : from.line;
@@ -1070,8 +1435,11 @@ function selectRow(station, part, line, compose, extend) {
   state.sel = { station, part, line };
   $$("#station .row.sel, #station .kcur").forEach((r) => r.classList.remove("sel", "kcur"));
   markBlock();
-  setTimeout(renderStatus);
-  if (compose) return openComposer(station, part, line);
+  setTimeout(() => {
+    renderStatus();
+    updateDiscussionControls();
+  });
+  if (compose) return openComposer(station, part, line, { from: askRange?.from, end: askRange?.to });
   document.querySelector(`#station .row[data-part="${part}"][data-line="${line}"]`)?.classList.add("sel");
 }
 
@@ -1120,7 +1488,8 @@ function openComposer(station, part, line, opts = {}) {
   }
   state.sel = { station, part, line };
   const mode = opts.mode ?? (opts.answers ? "answer" : "comment");
-  state.compose = keep ?? { station, part, line, answers: opts.answers ?? "", mode, label: "", blocking: false, text: "", picking: !!opts.picking && mode === "comment" && !opts.answers };
+  state.compose = keep ?? { station, part, line, from: opts.from ?? line, end: opts.end ?? line, version: state.view.version,
+    mode, answers: opts.answers ?? "", label: "", blocking: false, text: "", picking: !!opts.picking && mode === "comment" && !opts.answers };
   if (!keep) Object.assign(state.compose, { mode, answers: opts.answers ?? "" });
   renderKeepScroll();
   const ta = document.querySelector("#station .composer textarea");
@@ -1134,15 +1503,16 @@ function composer(s, p) {
   const labels = reader().labels ?? [];
   const note = cp.answers ? s.notes.find((n) => n.key === cp.answers) : null;
   const ask = cp.mode === "ask";
+  const lines = cp.from === cp.end ? cp.from + 1 : `${cp.from + 1}–${cp.end + 1}`;
   const head = ask
-    ? `Ask the agent about <code>${esc(p.file)}:${cp.line + 1}</code>`
+    ? `Ask the agent about <code>${esc(p.file)}:${lines}</code>`
     : note
       ? `Answer to: <span class="muted">${esc(oneLine(note.text).slice(0, 90))}${note.text.length > 90 ? "…" : ""}</span>`
       : `Comment on <code>${esc(p.file)}:${cp.line + 1}</code>`;
   const foot = ask
     ? state.agentLive
-      ? "Sent to the agent right away; its answer appears on this line. Enter sends, Shift+Enter breaks the line, Esc cancels."
-      : "The agent is not running: the question is saved for it (margin questions). Enter saves, Esc cancels."
+      ? "Enter asks, Shift+Enter adds a line, Esc cancels."
+      : "Start the review agent to ask a question."
     : "Kept as a draft until you send the comments to the agent. Ctrl+Enter saves, Esc cancels.";
   const box = el(`<div class="composer${ask ? " ask" : ""}">
     <div class="cp-head">${head}</div>
@@ -1151,8 +1521,27 @@ function composer(s, p) {
     <div class="cp-foot"><span class="muted small">${foot}</span>
       <span class="spacer"></span><button class="small cp-cancel">Cancel</button><button class="primary small cp-save">${ask ? "Ask" : "Save draft"}</button></div></div>`);
   const ta = box.querySelector("textarea");
+  const submit = box.querySelector(".cp-save");
+  const cancelButton = box.querySelector(".cp-cancel");
+  let switchMode;
+  if (!cp.answers && !cp.picking) {
+    switchMode = el(`<button class="link-btn cp-mode">${ask ? "Write a comment" : "Ask agent"}</button>`);
+    box.querySelector(".cp-head").append(" ", switchMode);
+    switchMode.onclick = () => {
+      if (cp.pending) return;
+      cp.mode = ask ? "comment" : "ask";
+      renderKeepScroll();
+      $("#station .composer textarea")?.focus();
+    };
+  }
+  const controls = () => {
+    ta.disabled = cancelButton.disabled = !!cp.pending;
+    submit.disabled = !!cp.pending || (ask && !state.agentLive);
+    if (switchMode) switchMode.disabled = !!cp.pending;
+  };
+  controls();
   ta.value = cp.text;
-  const tip = () => (ask ? "what you want to know about this line" : labels.find((l) => l.name === cp.label)?.tip ?? "your comment");
+  const tip = () => (ask ? "What would you like to know?" : labels.find((l) => l.name === cp.label)?.tip ?? "your comment");
   ta.placeholder = tip();
   if (cp.picking) {
     box.tabIndex = 0;
@@ -1200,22 +1589,36 @@ function composer(s, p) {
   }
   ta.oninput = () => (cp.text = ta.value);
   const save = async () => {
+    if (cp.pending || (ask && !state.agentLive)) return;
+    cp.pending = true;
+    controls();
     let ok;
     if (ask) {
-      ok = await act("Ask", { station: cp.station, part: cp.part, line: cp.line, text: ta.value });
-      if (ok) toast(state.agentLive ? "Question sent to the agent." : "Question saved; start the agent to have it answered.");
+      try {
+        await api("Reviews.Ask", { station: cp.station, part: cp.part, line: cp.from, end: cp.end, version: cp.version, text: cp.text });
+        ok = true;
+        refreshDiffQuestions(state.view);
+      } catch (e) {
+        if (state.compose === cp) toast(errText(e), true);
+      }
     } else {
       const def = labels.find((l) => l.name === cp.label)?.blocking ?? false;
       ok = await act("AddComment", { station: cp.station, part: cp.part, line: cp.line, label: cp.label, blocking: cp.label ? def !== cp.blocking : false, text: ta.value, answers: cp.answers || "" });
       const last = reader().comments[reader().comments.length - 1];
       if (ok && last) toast(`${last.id} saved as a draft; S sends every draft to the agent`);
     }
+    cp.pending = false;
+    if (state.compose !== cp) return;
     if (ok) {
       state.compose = null;
       renderKeepScroll();
+    } else {
+      renderKeepScroll();
+      $("#station .composer textarea")?.focus();
     }
   };
   const cancel = () => {
+    if (cp.pending) return;
     state.compose = null;
     renderKeepScroll();
   };
@@ -1229,15 +1632,16 @@ function composer(s, p) {
       cancel();
     }
   };
-  box.querySelector(".cp-save").onclick = save;
-  box.querySelector(".cp-cancel").onclick = cancel;
+  submit.onclick = save;
+  cancelButton.onclick = cancel;
   return box;
 }
 
 function startOnLine(mode) {
   const s = cur();
   if (!state.sel || state.sel.station !== s.id) return needLine(mode === "ask" ? "ask about it" : "comment on it");
-  openComposer(state.sel.station, state.sel.part, state.sel.line, { mode, picking: true });
+  const range = mode === "ask" ? block() : null;
+  openComposer(state.sel.station, state.sel.part, state.sel.line, { mode, from: range?.line, end: range?.end, picking: true });
 }
 
 export async function sendComments() {
@@ -1966,17 +2370,7 @@ function renderRecap(box) {
     ov.append(g);
   }
   if (!any) ov.append(el(`<p class="muted">Nothing open: every problem and question was dismissed.</p>`));
-  const jumpTo = (station, file, line) => () => {
-    const si = state.view.stations.findIndex((s) => s.id === station);
-    if (si < 0) return;
-    const s = state.view.stations[si];
-    const pi = s.parts.findIndex((p) => p.file === file && line - 1 >= p.start && line - 1 <= p.end);
-    goStation(si, -1, pi >= 0 && guided() ? Math.max(stepOf(s, pi, line - 1), 0) : 0);
-    if (pi >= 0) {
-      selectRow(s.id, pi, line - 1, false);
-      document.querySelector(`#station .row[data-part="${pi}"][data-line="${line - 1}"]`)?.scrollIntoView({ block: "center" });
-    }
-  };
+  const jumpTo = (q) => () => jumpDiscussion(state.view.path, q.id, false);
   if (rd.comments.length) {
     const c = el(`<div><h3>Your comments · S sends the drafts, x deletes one</h3></div>`);
     if (rd.drafts) {
@@ -1985,7 +2379,7 @@ function renderRecap(box) {
       c.append(b);
     }
     rd.comments.forEach((q) => {
-      const card = commentCard(q, { static: true, where: true, jump: jumpTo(q.station, q.file, q.line) });
+      const card = commentCard(q, { static: true, where: true, jump: jumpTo(q) });
       card.classList.add("navable");
       card.dataset.comment = q.id;
       c.append(card);
@@ -1994,7 +2388,7 @@ function renderRecap(box) {
   }
   if (rd.questions.length) {
     const c = el(`<div><h3>Questions you asked</h3></div>`);
-    rd.questions.forEach((q) => c.append(questionCard(q, { static: true, where: true, jump: jumpTo(q.station, q.file, q.line) })));
+    rd.questions.forEach((q) => c.append(questionCard(q, { static: true, where: true, jump: jumpTo(q) })));
     ov.append(c);
   }
   const stops = state.view.stations.map((s, i) => [s, i]).filter(([s]) => s.kind === "code");
@@ -2688,6 +3082,8 @@ export function reviewKey(e) {
   if (!state.view) return false;
   const k = e.key;
   const s = cur();
+  if ((k === "Enter" || k === " ") && e.target.closest?.(".discussion-nav button, .jump-reply")) return false;
+  if (k === "Tab") return false;
   if (document.querySelector(".modal-back")) return modalKey(e);
   const ov = s.kind === "overview" && guided();
   const sel = state.sel && state.sel.station === s.id ? state.sel : null;
@@ -2800,11 +3196,11 @@ function stepPosition(s, step) {
   return { kind: step.kind, file: part?.file ?? "", side: part?.base ? "base" : "", from: step.from, to: step.to };
 }
 
-function restoreReadingPosition(position) {
+async function restoreReadingPosition(position) {
   if (!position) return false;
   const index = state.view.stations.findIndex((station) => station.id === position.station);
   if (index < 0) {
-    goStation(0);
+    await goStation(0);
     return true;
   }
   const s = state.view.stations[index];
@@ -2814,20 +3210,70 @@ function restoreReadingPosition(position) {
     return key.kind === saved.kind && (!("from" in key) || (key.file === (saved.file ?? "") &&
       key.side === (saved.side ?? "") && key.from === saved.from && key.to === saved.to));
   }) : 0;
-  goStation(index, -1, Math.max(0, step));
+  await goStation(index, -1, Math.max(0, step));
   if (step >= 0) $("#station").scrollTop = position.scroll;
   return true;
+}
+
+function readingPosition(s) {
+  return { station: s.id, step: walking() ? stepPosition(s, s.steps?.[state.step]) : null, scroll: $("#station").scrollTop };
+}
+
+function captureReadingOrigin() {
+  const s = cur();
+  const positions = (s.parts ?? []).map((p, i) => {
+    const key = partKey(s, i);
+    return { file: p.file, base: !!p.base, from: p.start, extra: state.expand[key] ?? 0, whole: !!state.whole[key] };
+  });
+  return { ...readingPosition(s), path: state.view.path, full: reader().full, positions,
+    sel: state.sel?.station === s.id ? { ...state.sel } : null,
+    block: state.block?.station === s.id ? { ...state.block } : null,
+    note: s.notes[state.note]?.key,
+    horizontal: $$("#station .code-scroll").map((x) => x.scrollLeft) };
+}
+
+async function backToReading() {
+  const origin = readingOrigin;
+  if (!origin || !beginDiscussionAction()) return;
+  try {
+    if (state.view?.path !== origin.path && !await openReviewFile(origin.path, false, true)) return;
+    closeModal();
+    hooks.showReviewer();
+    activeThread = "";
+    if (reader().full !== origin.full) await act("SetFull", origin.full);
+    const s = state.view.stations.find((station) => station.id === origin.station);
+    const matches = (i) => {
+      const p = s?.parts[i], saved = origin.positions[i];
+      return p && saved && p.file === saved.file && !!p.base === saved.base && p.start === saved.from;
+    };
+    s?.parts.forEach((_, i) => {
+      const key = partKey(s, i);
+      delete state.parts[key];
+      state.expand[key] = matches(i) ? origin.positions[i].extra : 0;
+      state.whole[key] = matches(i) && origin.positions[i].whole;
+    });
+    await restoreReadingPosition(origin);
+    state.sel = origin.sel && matches(origin.sel.part) && rowAt(origin.sel.part, origin.sel.line) ? origin.sel : null;
+    state.block = state.sel && origin.block && matches(origin.block.part) ? origin.block : null;
+    state.note = origin.note ? s?.notes.findIndex((note) => note.key === origin.note) ?? -1 : -1;
+    renderKeepScroll();
+    $("#station").scrollTop = origin.scroll;
+    $$("#station .code-scroll").forEach((x, i) => { x.scrollLeft = origin.horizontal[i] ?? 0; });
+    renderStatus();
+    readingOrigin = null;
+    queueReadingPosition(0, true);
+  } finally {
+    discussionBusy = false;
+    updateDiscussionControls();
+  }
 }
 
 let readingTimer, pendingPosition, savingPosition;
 function queueReadingPosition(delay = 0, remember = false) {
   const opened = state.opened, station = cur();
-  if (!opened || opened.restoringPosition || state.view?.path !== opened.path || !station) return;
-  const position = {
-    station: station.id,
-    step: walking() ? stepPosition(station, station.steps?.[state.step]) : null,
-    scroll: Math.round($("#station").scrollTop),
-  };
+  if (!opened || opened.restoringPosition || state.view?.path !== opened.path || !station || readingOrigin) return;
+  const position = readingPosition(station);
+  position.scroll = Math.round(position.scroll);
   const key = JSON.stringify(position);
   if (!remember && key === opened.savedPosition && pendingPosition?.opened !== opened) return;
   const rememberReview = remember || (pendingPosition?.opened === opened && pendingPosition.remember);

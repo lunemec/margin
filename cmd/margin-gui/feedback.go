@@ -45,11 +45,13 @@ type ReaderUpdate struct {
 
 type QuestionView struct {
 	state.Question
+	DiscussionLocation
 	Answered bool `json:"answered"`
 }
 
 type CommentView struct {
 	state.Question
+	DiscussionLocation
 	Label    string `json:"label"`
 	Blocking bool   `json:"blocking"`
 	Resolved bool   `json:"resolved"`
@@ -88,13 +90,14 @@ func readerOf(d *doc.Doc, st *state.State) ReaderView {
 		Questions: []QuestionView{}, Full: st.Full, Blind: st.Blind, Revealed: keys(st.Revealed), Visited: keys(st.Visited), Seen: st.Seen}
 	resolved := d.AnsweredQuestions()
 	for _, q := range st.Questions {
+		location := locateDiscussionLine(d, q)
 		if !q.IsComment() {
-			rv.Questions = append(rv.Questions, QuestionView{Question: q, Answered: resolved[q.ID]})
+			rv.Questions = append(rv.Questions, QuestionView{Question: q, DiscussionLocation: location, Answered: resolved[q.ID]})
 			continue
 		}
 		name, blocking := state.CommentLabel(q.Text)
 		_, body := state.CommentBody(q.Text)
-		rv.Comments = append(rv.Comments, CommentView{Question: q, Label: name, Blocking: blocking, Resolved: resolved[q.ID], Body: body})
+		rv.Comments = append(rv.Comments, CommentView{Question: q, DiscussionLocation: location, Label: name, Blocking: blocking, Resolved: resolved[q.ID], Body: body})
 		if q.Draft {
 			rv.Drafts++
 		}

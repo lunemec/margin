@@ -38,6 +38,7 @@ type Reviews struct {
 	watcher        *watch.Watcher
 	ctl            ctlServer
 	tests          testRuns
+	questions      questionQueue
 	// recovered lists files put back on start, from a run margin did not live to undo.
 	recovered  []string
 	recoverErr string
@@ -404,6 +405,7 @@ func (r *Reviews) watch(paths []string) {
 }
 
 func (r *Reviews) ServiceShutdown() error {
+	r.questions.stop()
 	r.StopTests()
 	tryout.RestoreAll()
 	if r.ctl.srv != nil {

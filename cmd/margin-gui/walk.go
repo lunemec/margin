@@ -25,34 +25,6 @@ type LineInput struct {
 	Text    string `json:"text"`
 }
 
-// Ask saves a question about a line and sends it to the agent straight away, like a in the terminal
-// viewer; without a running agent it stays saved for `margin questions`.
-func (r *Reviews) Ask(in LineInput) (*ReaderUpdate, error) {
-	body := text.Sanitize(strings.TrimSpace(in.Text))
-	if body == "" {
-		return nil, errors.New("the question is empty")
-	}
-	var q state.Question
-	v, err := r.change(func(d *doc.Doc, st *state.State) error {
-		_, s := d.Station(in.Station)
-		if s == nil || in.Part < 0 || in.Part >= len(s.Parts) || in.Line < 0 || in.Line >= len(s.Parts[in.Part].Lines) {
-			return errors.New("that line is no longer in the review")
-		}
-		q = lineQuestion(s, s.Parts[in.Part], in.Line, st.NextQuestionID(), body)
-		st.Questions = append(st.Questions, q)
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	if path := r.current(); r.agents.Running(path) {
-		if err := r.agents.Send(path, tui.AgentMessage(q)); err != nil {
-			return nil, err
-		}
-	}
-	return v, nil
-}
-
 // ReadNotes marks the notes a walk step showed as read, the way space does in the terminal viewer.
 func (r *Reviews) ReadNotes(keys []string) (*ReaderUpdate, error) {
 	return r.change(func(d *doc.Doc, st *state.State) error {
