@@ -17,6 +17,7 @@ var Light bool
 
 type Span struct {
 	Text   string
+	Type   chroma.TokenType
 	Color  string
 	Light  string
 	Bold   bool
@@ -47,7 +48,7 @@ func Highlight(filename string, lines []string) [][]Span {
 	line := 0
 	for tok := it(); tok != chroma.EOF; tok = it() {
 		e := style.Get(tok.Type)
-		sp := Span{Bold: e.Bold == chroma.Yes, Italic: e.Italic == chroma.Yes}
+		sp := Span{Type: tok.Type, Bold: e.Bold == chroma.Yes, Italic: e.Italic == chroma.Yes}
 		if e.Colour.IsSet() {
 			sp.Color = e.Colour.String()
 		}

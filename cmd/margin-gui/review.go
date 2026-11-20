@@ -194,11 +194,13 @@ type Row struct {
 }
 
 type Span struct {
-	Text   string `json:"t"`
-	Color  string `json:"c,omitempty"`
-	Light  string `json:"l,omitempty"`
-	Bold   bool   `json:"b,omitempty"`
-	Italic bool   `json:"i,omitempty"`
+	Text        string `json:"t"`
+	Color       string `json:"c,omitempty"`
+	Light       string `json:"l,omitempty"`
+	Bold        bool   `json:"b,omitempty"`
+	Italic      bool   `json:"i,omitempty"`
+	LightBold   bool   `json:"lb,omitempty"`
+	LightItalic bool   `json:"li,omitempty"`
 }
 
 type NoteView struct {
@@ -476,7 +478,7 @@ func partOf(d *doc.Doc, p *doc.Part, rng anchor.Range, extra int, byLine map[str
 			row.Cov = "idle"
 		}
 		for _, s := range spans[i] {
-			row.Spans = append(row.Spans, Span{Text: s.Text, Color: s.Color, Light: s.Light, Bold: s.Bold, Italic: s.Italic})
+			row.Spans = append(row.Spans, spanOf(s))
 		}
 		pv.Rows = append(pv.Rows, row)
 	}
