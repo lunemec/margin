@@ -235,6 +235,28 @@ When you send your comments, the agent answers each one in a markdown note besid
 
 The panel updates while the agent writes, unless you are editing or replying.
 
+## Posting to GitHub
+
+When the review belongs to a GitHub pull request, margin-gui can post your own comments to it
+through `gh`, logged in as you. It finds the pull request from a `--pr` review, from the reviewed
+commit, or from the branch checked out. Nothing is posted without a confirmation that shows the pull
+request, the line each comment lands on and the exact text; the agent has no command that posts.
+
+- **Comment on GitHub** on one of your comments posts that comment at once, after you confirm it.
+- **Add to GitHub review** picks a comment for one review sent at the end. *GitHub review* in the top
+  bar, or *Send review to GitHub* in the recap, shows the picked comments, a summary to write and the
+  decision: comment, approve or request changes. margin suggests the decision from your verdicts;
+  approve and request changes are off on your own pull request, since GitHub refuses them.
+
+GitHub only takes inline comments on lines its diff shows. Comments are matched to the pull
+request's lines by their text, so local edits that moved a line do not misplace them. A comment
+outside the diff goes on its file (one comment) or into the review text with its line (a review).
+A posted comment is marked *on GitHub* and links to it; it can no longer be reworded. Its card
+shows the reactions and replies it got on GitHub, pulled when the review opens, when the window
+gets focus again (at most every 30 seconds) and with *↻ GitHub*. *Resolve on GitHub* (or
+*Unresolve*) appears when GitHub lets you change the thread's state. Agent notes and
+fix requests are not posted; *Export* still gives everything as text to paste yourself.
+
 ## Settings
 
 The gear in the sidebar (or **ctrl+,**) opens the settings. margin-gui and margin-tui share them,

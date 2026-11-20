@@ -38,6 +38,7 @@ type Reviews struct {
 	watcher        *watch.Watcher
 	ctl            ctlServer
 	tests          testRuns
+	gh             ghCache
 	// recovered lists files put back on start, from a run margin did not live to undo.
 	recovered  []string
 	recoverErr string

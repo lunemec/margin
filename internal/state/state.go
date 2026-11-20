@@ -53,6 +53,10 @@ type Question struct {
 	Answers string `yaml:"answers,omitempty" json:"answers,omitempty"`
 	// Fix is the key of the agent's problem note the reader agreed with and sent to be fixed.
 	Fix string `yaml:"fix,omitempty" json:"fix,omitempty"`
+	// ForGitHub marks a comment the reader picked for the pull request review they send to GitHub.
+	ForGitHub bool `yaml:"for_github,omitempty" json:"forGitHub,omitempty"`
+	// GitHub is the page of the comment, or of the review it went in, once the reader posted it.
+	GitHub string `yaml:"github,omitempty" json:"github,omitempty"`
 }
 
 func Load(path string) (*State, error) {
@@ -142,6 +146,9 @@ func (s *State) EditDraft(id, body string) error {
 		}
 		if !q.Draft {
 			return fmt.Errorf("%s was sent already; write a new comment instead", id)
+		}
+		if q.GitHub != "" {
+			return fmt.Errorf("%s is on GitHub already; write a new comment instead", id)
 		}
 		prefix, _ := CommentBody(q.Text)
 		s.Questions[i].Text = prefix + body
