@@ -141,10 +141,25 @@ export async function act(name, ...args) {
   }
 }
 
-let reloadTimer;
+let reloadTimer, pendingReload, reloading = false;
 Events.On("review:changed", () => {
+  const opened = state.opened;
   clearTimeout(reloadTimer);
-  reloadTimer = setTimeout(() => state.opened && reload(), 150);
+  reloadTimer = setTimeout(async () => {
+    if (!opened || state.opened !== opened) return;
+    pendingReload = opened;
+    if (reloading) return;
+    reloading = true;
+    try {
+      while (pendingReload) {
+        const target = pendingReload;
+        pendingReload = null;
+        if (state.opened === target) await reload();
+      }
+    } finally {
+      reloading = false;
+    }
+  }, 150);
 });
 
 // The agent drives the window through the control socket: margin goto, where and reload.
