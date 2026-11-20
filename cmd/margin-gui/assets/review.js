@@ -1,5 +1,5 @@
 import { Events, Clipboard } from "/wails/runtime.js";
-import { api, $, $$, state, hooks, esc, prose, oneLine, el, toast, errText, tail, plural, shortList, base, openModal, closeModal } from "./core.js";
+import { api, $, $$, state, hooks, esc, prose, md, oneLine, el, toast, errText, tail, plural, shortList, base, openModal, closeModal } from "./core.js";
 import { openAnswers } from "./answers.js";
 import { runTests, tryChange, toggleTestPanel, resetTests, statusOf, statusIcon, testHooks, results } from "./tests.js";
 
@@ -62,6 +62,9 @@ async function loadReview(dir, arg, fresh, file, restore) {
     resetTests();
     endTry();
     state.view = null;
+    state.gh = null;
+    state.ghErr = "";
+    state.ghPull = null;
     Object.assign(state, { station: 0, note: -1, step: 0, sel: null, compose: null, editing: null, block: null, parts: {}, expand: {}, whole: {}, around: {}, known: null,
       query: "", spot: -1, spotLines: null, filter: 0 });
     state.fresh = new Set();
@@ -73,6 +76,7 @@ async function loadReview(dir, arg, fresh, file, restore) {
     active.restoringPosition = false;
     return false;
   }
+  if (!same) loadGitHub(active);
   if (!same && !restoreReadingPosition(position)) {
     // Like the terminal viewer: the first code stop, unless a guided walk starts fresh at the overview.
     const atOverview = guided() && !reader().visited.length;
@@ -409,6 +413,7 @@ export function renderReview() {
   const drafts = reader().drafts ?? 0;
   $("#send-btn").classList.toggle("hidden", !drafts);
   $("#send-btn").textContent = `Send ${drafts} comment${drafts > 1 ? "s" : ""}`;
+  renderGitHubButton();
   const toFix = reader().toFix ?? 0;
   $("#fix-btn").classList.toggle("hidden", !toFix);
   $("#fix-btn").textContent = `Ask to fix ${toFix}`;
@@ -435,6 +440,8 @@ export function renderReview() {
     if (s.auto) meta.push(`<span class="m-del">not in the tour</span>`);
     const mine = reader().comments.filter((c) => c.station === s.id && !c.resolved).length;
     if (mine) meta.push(`<span class="m-mine">${mine} comment${mine > 1 ? "s" : ""}</span>`);
+    const ghn = ghOpen().filter((t) => t.station === s.id).length;
+    if (ghn) meta.push(`<span class="m-gh">${ghn} on GitHub</span>`);
     const vd = verdicts.find((x) => x.id === reader().verdicts?.[s.id]);
     const visited = !vd && reader().visited.includes(s.id) && s.kind === "code";
     const item = el(`<div class="st${i === state.station ? " on" : ""}"><span class="num">${vd ? `<span class="vdot ${vd.cls}" title="${vd.label}"></span>` : visited ? `<span class="vdot half" title="visited"></span>` : num}</span>
@@ -482,6 +489,11 @@ function renderToolbar() {
   if (s?.kind === "code" && state.view.coverage && s.cov?.missed) btn("Next untested", "The next changed line no test runs (u, U goes back)", false, () => nextUntested(1));
   if (state.spot >= 0) btn("Spotlight: " + esc(state.view.coverage?.tests[state.spot]?.label ?? "") + " ✕", "End the spotlight (esc)", true, endSpot, "warn");
   if (reader().comments.some((c) => !c.draft)) btn("Answers", "The agent's answers to your comments, to read, edit or reply to (A)", false, () => openAnswers());
+  if (state.gh) {
+    const open = ghOpen().length;
+    btn(`GitHub${open ? " · " + open + " open" : ""}`, `Everything said on PR #${state.gh.number}: threads on the code and the conversation`, false, openGitHubPanel);
+    btn("↻", "Pull comments, replies, reactions and resolved state from GitHub again", false, pullGitHub);
+  }
   btn("Export", "Your comments, flagged problems and calls, to post yourself", false, openExport);
   btn("?", "All keys (H)", false, openHelp);
 }
@@ -752,6 +764,9 @@ function codeRows(s, pi, from, to, opts = {}) {
     }
     for (const c of reader().comments) {
       if (c.station === s.id && c.file === p.file && c.line === r.n && (c.side === "base") === !!p.base && !c.resolved) code.append(commentCard(c));
+    }
+    for (const t of state.ghPull?.threads ?? []) {
+      if (t.station === s.id && t.path === p.file && t.line === r.n && (t.side === "base") === !!p.base) code.append(threadCard(t));
     }
     for (const q of reader().questions) {
       if (q.station === s.id && q.file === p.file && q.line === r.n && (q.side === "base") === !!p.base && !q.answered) code.append(questionCard(q));
@@ -1036,35 +1051,49 @@ function commentCard(c, opts = {}) {
     ${opts.where ? `<div class="muted small">${esc(c.file)}:${c.line}</div>` : ""}
     <span class="ck">${esc(c.id)} · you${c.label ? " · " + esc(c.label) : ""}${c.blocking ? " (blocking)" : ""}</span>
     <span class="badge">${c.fix ? (c.resolved ? "fixed" : "fix sent") : c.resolved ? "resolved" : c.draft ? "draft" : "sent"}</span>
+    ${c.github ? `<button class="badge gh-on" title="Open it on GitHub">on GitHub ↗</button>` : c.forGitHub ? `<span class="badge gh-picked">in GitHub review</span>` : ""}
+    ${c.github && ghMine(c)?.resolved ? `<span class="badge gh-resolved">resolved on GitHub</span>` : ""}
     <div>${prose(body)}</div></div>`);
+  if (c.github) card.append(...githubThread(c));
+  const ghLink = card.querySelector(".gh-on");
+  if (ghLink) {
+    ghLink.onclick = (e) => {
+      e.stopPropagation();
+      openURL(c.github);
+    };
+  }
+  if (c.draft && state.editing?.id === c.id) {
+    card.querySelector(":scope > div:last-of-type").replaceWith(editBox(c));
+    card.classList.add("editing");
+    if (opts.jump) card.onclick = opts.jump;
+    return card;
+  }
+  const actions = el(`<div class="note-actions"></div>`);
   if (!c.draft) {
     const ans = el(`<button class="na" title="Read the agent's answer, reply to it (A)">Answer</button>`);
     ans.onclick = (e) => {
       e.stopPropagation();
       openAnswers(c.id);
     };
-    const actions = el(`<div class="note-actions"></div>`);
     actions.append(ans);
-    card.append(actions);
-  }
-  if (c.draft && state.editing?.id === c.id) {
-    card.querySelector(":scope > div:last-of-type").replaceWith(editBox(c));
-    card.classList.add("editing");
-  } else if (c.draft) {
-    const edit = el(`<button class="na" title="Reword this draft before you send it (e)">Edit</button>`);
-    edit.onclick = (e) => {
-      e.stopPropagation();
-      startEdit(c);
-    };
+  } else {
+    if (!c.github) {
+      const edit = el(`<button class="na" title="Reword this draft before you send it (e)">Edit</button>`);
+      edit.onclick = (e) => {
+        e.stopPropagation();
+        startEdit(c);
+      };
+      actions.append(edit);
+    }
     const del = el(`<button class="na" title="Delete this draft (x in the recap)">Delete</button>`);
     del.onclick = (e) => {
       e.stopPropagation();
       act("DeleteComment", c.id);
     };
-    const actions = el(`<div class="note-actions"></div>`);
-    actions.append(edit, del);
-    card.append(actions);
+    actions.append(del);
   }
+  actions.append(...githubActions(c), ...resolveActions(c));
+  card.append(actions);
   if (opts.jump) card.onclick = opts.jump;
   return card;
 }
@@ -1121,8 +1150,8 @@ function editBox(c) {
 function editKey(s, sel) {
   const k = document.querySelector("#station .kcur[data-comment]");
   let c = k ? reader().comments.find((x) => x.id === k.dataset.comment) : null;
-  if (c && !c.draft) {
-    toast(`${c.id} was sent already; write a new comment instead`);
+  if (c && (!c.draft || c.github)) {
+    toast(`${c.id} was ${c.github ? "posted to GitHub" : "sent"} already; write a new comment instead`);
     return true;
   }
   if (!c && sel) {
@@ -2014,7 +2043,8 @@ function renderRecap(box) {
   list("Still open", o.left);
   list("Goes with it", o.notes);
   ov.append(rec);
-  const exp = el(`<p><button class="small">Export for posting…</button> <span class="muted small">your comments, flagged problems and calls, as Markdown or GitHub review text. margin never posts.</span></p>`);
+  ov.append(githubRecap());
+  const exp = el(`<p><button class="small">Export for posting…</button> <span class="muted small">your comments, flagged problems and calls, as Markdown or GitHub review text, to paste yourself.</span></p>`);
   exp.querySelector("button").onclick = openExport;
   ov.append(exp);
   if (rd.toFix) {
@@ -2694,6 +2724,438 @@ function reveal() {
   act("Reveal", s.id).then((ok) => ok && toast("Notes shown; compare them with what you found."));
 }
 
+// GitHub: the reader posts their own comments to the pull request, one at a time or as one review.
+// Every post goes through a confirmation that shows exactly what is sent and where.
+
+async function loadGitHub(opened, refresh = false) {
+  state.ghLoading = true;
+  try {
+    const pr = await api("Reviews.GitHubPR", refresh);
+    if (state.opened !== opened) return;
+    Object.assign(state, { gh: pr, ghErr: "" });
+    loadThreads(opened);
+  } catch (e) {
+    if (state.opened !== opened) return;
+    Object.assign(state, { gh: null, ghErr: errText(e) });
+  } finally {
+    if (state.opened === opened) state.ghLoading = false;
+  }
+  if (!state.view) return;
+  renderGitHubButton();
+  renderKeepScroll();
+}
+
+function renderGitHubButton() {
+  const b = $("#gh-btn");
+  if (!b) return;
+  b.classList.toggle("hidden", !state.gh);
+  b.onclick = openGitHubReview;
+  if (!state.gh) return;
+  const n = reader().comments.filter((c) => c.forGitHub && !c.github && !c.fix).length;
+  b.textContent = n ? `GitHub review (${n})` : "GitHub review";
+  b.title = `Send a review to PR #${state.gh.number}: your picked comments and your decision`;
+}
+
+const reactionEmoji = { THUMBS_UP: "👍", THUMBS_DOWN: "👎", LAUGH: "😄", HOORAY: "🎉", CONFUSED: "😕", HEART: "❤️", ROCKET: "🚀", EYES: "👀" };
+
+// loadThreads pulls what is said on the pull request: the threads of the reader's posted comments,
+// everyone else's threads, placed on their lines, and the conversation.
+async function loadThreads(opened = state.opened, quiet = true) {
+  if (!state.gh) return;
+  state.ghThreadsAt = Date.now();
+  try {
+    const pull = await api("Reviews.GitHubThreads");
+    if (state.opened !== opened) return;
+    state.ghPull = pull;
+    if (state.view) {
+      rerenderKeepScroll();
+      if (document.querySelector(".modal.gh-panel")) openGitHubPanel();
+    }
+    if (!quiet) toast(`Pulled from GitHub: ${plural(pull.threads.length + Object.keys(pull.mine).length, "thread", "threads")}, ${plural(pull.conversation.length, "comment", "comments")} in the conversation`);
+  } catch (e) {
+    if (!quiet && state.opened === opened) toast(errText(e), true);
+  }
+}
+
+// rerenderKeepScroll redraws the stop list, the toolbar and the stop, staying where the reader is.
+function rerenderKeepScroll() {
+  const sc = $("#station").scrollTop;
+  renderReview();
+  $("#station").scrollTop = sc;
+}
+
+// pullGitHub reads the pull request again (its diff may have moved on) and then everything said on it.
+async function pullGitHub() {
+  const opened = state.opened;
+  toast("Pulling from GitHub…");
+  await loadGitHub(opened, true);
+  if (state.opened !== opened) return;
+  if (state.ghErr) return toast(state.ghErr, true);
+  await loadThreads(opened, false);
+}
+
+window.addEventListener("focus", () => {
+  if (state.gh && Date.now() - (state.ghThreadsAt ?? 0) > 30000) loadThreads();
+});
+
+const ghMine = (c) => state.ghPull?.mine?.[c.id];
+const ghOpen = () => (state.ghPull?.threads ?? []).filter((t) => !t.resolved);
+
+// ghBody shows GitHub markdown without the HTML bots wrap it in.
+function ghBody(src) {
+  const clean = String(src ?? "")
+    .replace(/<!--[\s\S]*?-->/g, "")
+    .replace(/<\/?(details|summary|sup|sub|p|br|div|picture|source|img|a|b|i|em|strong|kbd|span)\b[^>]*>/gi, "")
+    .trim();
+  return md(clean);
+}
+
+function reactionsRow(rs) {
+  if (!rs?.length) return null;
+  return el(`<div class="gh-reactions">${rs.map((r) => `<span class="gh-react" title="${esc(r.content.toLowerCase().replace("_", " "))}">${reactionEmoji[r.content] ?? esc(r.content)} ${r.count}</span>`).join("")}</div>`);
+}
+
+function repliesBox(replies) {
+  const box = el(`<div class="gh-replies"></div>`);
+  for (const rp of replies) {
+    const row = el(`<div class="gh-reply"><div class="gh-reply-head"><b>${esc(rp.author || "ghost")}</b> <button class="linkish small" title="Open it on GitHub">↗</button></div><div class="gh-md">${ghBody(rp.body)}</div></div>`);
+    row.querySelector("button").onclick = (e) => {
+      e.stopPropagation();
+      openURL(rp.url);
+    };
+    const rr = reactionsRow(rp.reactions);
+    if (rr) row.append(rr);
+    box.append(row);
+  }
+  return box;
+}
+
+// githubThread adds what happened on GitHub to one of the reader's posted comments.
+function githubThread(c) {
+  const t = ghMine(c);
+  if (!t) return [];
+  const out = [];
+  const rr = reactionsRow(t.reactions);
+  if (rr) out.push(rr);
+  if (t.replies.length) out.push(repliesBox(t.replies));
+  return out;
+}
+
+function resolveButton(t, what) {
+  if (!t || !(t.resolved ? t.canUnresolve : t.canResolve)) return null;
+  const b = el(`<button class="na" title="${t.resolved ? "Open the thread on GitHub again" : "Resolve the thread on GitHub"}">${t.resolved ? "Unresolve on GitHub" : "Resolve on GitHub"}</button>`);
+  b.onclick = async (e) => {
+    e.stopPropagation();
+    b.disabled = true;
+    const opened = state.opened;
+    try {
+      const pull = await api("Reviews.ResolveGitHubThread", t.id, !t.resolved);
+      if (state.opened !== opened) return;
+      state.ghPull = pull;
+      rerenderKeepScroll();
+      if (document.querySelector(".modal.gh-panel")) openGitHubPanel();
+      toast(`${what} ${t.resolved ? "opened again" : "resolved"} on GitHub`);
+    } catch (err) {
+      b.disabled = false;
+      toast(errText(err), true);
+    }
+  };
+  return b;
+}
+
+function resolveActions(c) {
+  if (!c.github || !state.gh) return [];
+  const out = [];
+  const b = resolveButton(ghMine(c), c.id);
+  if (b) out.push(b);
+  const pull = el(`<button class="na" title="Pull reactions, replies and resolved state from GitHub">↻ GitHub</button>`);
+  pull.onclick = (e) => {
+    e.stopPropagation();
+    pullGitHub();
+  };
+  out.push(pull);
+  return out;
+}
+
+// threadCard draws a thread someone started on GitHub: on its line, or in the GitHub panel.
+function threadCard(t, opts = {}) {
+  const first = t.comments[0] ?? { author: "", body: "" };
+  const where = opts.where ? `<div class="muted small">${esc(t.path)}${t.prLine ? ":" + t.prLine : ""}${t.outdated ? " · outdated, GitHub lost its line" : !t.station && t.prLine ? " · not shown in this review" : ""}</div>` : "";
+  const card = el(`<div class="comment gh-thread${t.resolved ? " gh-is-resolved" : ""}${opts.static ? " static" : ""}">${where}
+    <span class="ck">GitHub · ${esc(first.author || "ghost")}</span>${t.resolved ? `<span class="badge gh-resolved">resolved</span>` : ""}${t.outdated ? `<span class="badge">outdated</span>` : ""}
+    <div class="gh-md">${ghBody(first.body)}</div></div>`);
+  const rr = reactionsRow(first.reactions);
+  if (rr) card.append(rr);
+  if (t.comments.length > 1) card.append(repliesBox(t.comments.slice(1)));
+  const actions = el(`<div class="note-actions"></div>`);
+  const open = el(`<button class="na" title="Open the thread on GitHub">Open on GitHub ↗</button>`);
+  open.onclick = (e) => {
+    e.stopPropagation();
+    openURL(first.url);
+  };
+  actions.append(open);
+  const rb = resolveButton(t, "thread");
+  if (rb) actions.append(rb);
+  if (opts.jump && t.station) {
+    const j = el(`<button class="na" title="Go to its line in the review">Go to line</button>`);
+    j.onclick = (e) => {
+      e.stopPropagation();
+      closeModal();
+      opts.jump();
+    };
+    actions.append(j);
+  }
+  card.append(actions);
+  if (t.resolved && !opts.static) card.classList.add("gh-collapsed");
+  card.querySelector(".ck").onclick = (e) => {
+    e.stopPropagation();
+    card.classList.toggle("gh-collapsed");
+  };
+  return card;
+}
+
+function ghPostCard(p) {
+  const states = { APPROVED: "approved", CHANGES_REQUESTED: "requested changes", COMMENTED: "review", DISMISSED: "dismissed review" };
+  const card = el(`<div class="comment gh-thread static"><span class="ck">${esc(p.author || "ghost")}${p.state ? " · " + esc(states[p.state] ?? p.state.toLowerCase()) : ""}</span>
+    <span class="muted small"> ${esc((p.created || "").slice(0, 10))}</span><div class="gh-md">${ghBody(p.body) || `<span class="muted">no text</span>`}</div></div>`);
+  if (p.state === "APPROVED") card.classList.add("gh-approved");
+  if (p.state === "CHANGES_REQUESTED") card.classList.add("gh-changes");
+  const rr = reactionsRow(p.reactions);
+  if (rr) card.append(rr);
+  const actions = el(`<div class="note-actions"></div>`);
+  const open = el(`<button class="na">Open on GitHub ↗</button>`);
+  open.onclick = () => openURL(p.url);
+  actions.append(open);
+  card.append(actions);
+  return card;
+}
+
+function jumpToLine(station, file, line, base) {
+  const si = state.view.stations.findIndex((s) => s.id === station);
+  if (si < 0) return;
+  const s = state.view.stations[si];
+  const pi = s.parts.findIndex((p) => p.file === file && !!p.base === base && line - 1 >= p.start && line - 1 <= p.end);
+  goStation(si, -1, pi >= 0 && guided() ? Math.max(stepOf(s, pi, line - 1), 0) : 0);
+  if (pi >= 0) {
+    selectRow(s.id, pi, line - 1, false);
+    document.querySelector(`#station .row[data-part="${pi}"][data-line="${line - 1}"]`)?.scrollIntoView({ block: "center" });
+  }
+}
+
+// openGitHubPanel lists everything said on the pull request: threads on the code (open first, then
+// those no stop shows, then resolved) and the conversation.
+function openGitHubPanel() {
+  const pull = state.ghPull;
+  const body = el(`<div class="gh-confirm"></div>`);
+  const head = prHead(state.gh);
+  const re = el(`<button class="small">↻ Pull again</button>`);
+  re.onclick = pullGitHub;
+  head.append(el(`<span> </span>`), re);
+  body.append(head);
+  if (!pull) {
+    body.append(el(`<p class="muted">Nothing pulled yet.</p>`));
+  } else {
+    const all = pull.threads;
+    const groups = [
+      ["Open, on lines in this review", all.filter((t) => !t.resolved && t.station)],
+      ["Open, on lines this review does not show", all.filter((t) => !t.resolved && !t.station)],
+      ["Resolved", all.filter((t) => t.resolved)],
+    ];
+    for (const [h, ts] of groups) {
+      if (!ts.length) continue;
+      body.append(el(`<h4>${h} (${ts.length})</h4>`));
+      for (const t of ts) body.append(threadCard(t, { where: true, static: true, jump: () => jumpToLine(t.station, t.path, t.line, t.side === "base") }));
+    }
+    const mine = Object.keys(pull.mine).length;
+    if (mine) body.append(el(`<p class="muted small">${plural(mine, "thread", "threads")} started by your posted comments ${mine > 1 ? "are" : "is"} shown on those comments.</p>`));
+    body.append(el(`<h4>Conversation (${pull.conversation.length})</h4>`));
+    if (!pull.conversation.length) body.append(el(`<p class="muted small">Nothing said outside the code.</p>`));
+    for (const p of pull.conversation) body.append(ghPostCard(p));
+  }
+  const m = openModal(`GitHub · PR #${state.gh.number}`, body, "narrow gh-panel");
+  return m;
+}
+
+function openURL(url) {
+  api("Reviews.OpenURL", url).catch((e) => toast(errText(e), true));
+}
+
+function githubActions(c) {
+  if (!state.gh || c.fix || c.github) return [];
+  const post = el(`<button class="na" title="Post this comment to PR #${state.gh.number} now, after you confirm it">Comment on GitHub</button>`);
+  post.onclick = (e) => {
+    e.stopPropagation();
+    confirmGitHubComment(c);
+  };
+  const pick = el(`<button class="na${c.forGitHub ? " on" : ""}" title="${c.forGitHub ? "Take it out of the review you send to GitHub" : "Send it with the review you send to GitHub at the end"}">${c.forGitHub ? "✓ In GitHub review" : "Add to GitHub review"}</button>`);
+  pick.onclick = (e) => {
+    e.stopPropagation();
+    act("ToggleForGitHub", c.id).then(renderGitHubButton);
+  };
+  return [post, pick];
+}
+
+function githubRecap() {
+  const box = el(`<p></p>`);
+  if (state.gh) {
+    const n = reader().comments.filter((c) => c.forGitHub && !c.github && !c.fix).length;
+    const b = el(`<button class="small">Send review to GitHub…</button>`);
+    b.onclick = openGitHubReview;
+    box.append(b, el(`<span class="muted small"> to PR #${state.gh.number}: ${n ? plural(n, "picked comment", "picked comments") : "no comments picked yet"} and your decision (comment, approve or request changes). You confirm before anything is posted.</span>`));
+  } else if (state.ghErr) {
+    const b = el(`<button class="small">Look again</button>`);
+    b.onclick = () => loadGitHub(state.opened, true);
+    box.append(el(`<span class="muted small">No GitHub pull request for this review: ${esc(state.ghErr)} </span>`), b);
+  } else if (state.ghLoading) box.append(el(`<span class="muted small">Looking for the GitHub pull request…</span>`));
+  return box;
+}
+
+const short = (sha) => (sha ?? "").slice(0, 9);
+
+function prHead(pr) {
+  const head = el(`<div class="gh-pr"><button class="linkish" title="Open it on GitHub">PR #${pr.number}</button> ${esc(pr.title)}
+    <span class="muted small">by ${esc(pr.author || "?")} · you post as ${esc(pr.viewer || "your gh account")}</span></div>`);
+  head.querySelector("button").onclick = () => openURL(pr.url);
+  if (pr.state && pr.state !== "OPEN") head.append(el(`<div class="gh-warn">This pull request is ${esc(pr.state.toLowerCase())}.</div>`));
+  if (pr.differs)
+    head.append(el(`<div class="gh-warn">Your review shows ${esc(short(pr.local) || "local changes")}, the pull request is at ${esc(short(pr.headSha))}. Comments are matched to the pull request's lines by their text; check where each one lands below.</div>`));
+  return head;
+}
+
+function placeLine(pl) {
+  const where = `<code>${esc(pl.path)}:${pl.line}</code>${pl.side === "LEFT" ? " (old code)" : ""}`;
+  if (!pl.inFile) return `<div class="gh-place bad">${where} — ${esc(pl.why)}</div>`;
+  if (!pl.inline) return `<div class="gh-place warn">${where} — ${esc(pl.why)}</div>`;
+  return `<div class="gh-place">${where} — on the line${pl.moved ? `; ${esc(pl.why)}` : ""}</div>`;
+}
+
+// postedText is what GitHub will show, so the confirmation shows exactly that.
+function postedText(pl, single) {
+  if (pl.inline) return pl.body;
+  const ref = `${pl.side === "LEFT" ? "old line" : "line"} ${pl.line}`;
+  return single ? `${ref}: ${pl.body}` : `**${pl.path}**, ${ref}:\n\n${pl.body}`;
+}
+
+async function confirmGitHubComment(c) {
+  const body = el(`<div class="gh-confirm"><p class="muted">Reading the pull request…</p></div>`);
+  openModal("Comment on GitHub", body, "narrow");
+  let plan;
+  try {
+    plan = await api("Reviews.PlanGitHubComment", c.id);
+  } catch (e) {
+    body.innerHTML = `<p class="gh-place bad">${esc(errText(e))}</p>`;
+    return;
+  }
+  const pl = plan.comments[0];
+  body.innerHTML = "";
+  body.append(prHead(plan.pr), el(placeLine(pl)));
+  const pre = el(`<pre class="commit gh-text"></pre>`);
+  pre.textContent = postedText(pl, true);
+  const foot = el(`<div class="cp-foot"><span class="muted small">Posted at once, under your name, for everyone on the pull request to see. margin cannot take it back.</span>
+    <span class="spacer"></span><button class="small cp-cancel">Cancel</button><button class="primary small cp-save">Post to GitHub</button></div>`);
+  body.append(pre, foot);
+  const save = foot.querySelector(".cp-save");
+  foot.querySelector(".cp-cancel").onclick = () => closeModal();
+  if (!pl.inFile) save.disabled = true;
+  save.onclick = async () => {
+    save.disabled = true;
+    save.textContent = "Posting…";
+    if (await act("PostGitHubComment", c.id)) {
+      closeModal();
+      toast(`${c.id} is on GitHub`);
+      loadThreads();
+    } else {
+      save.disabled = false;
+      save.textContent = "Post to GitHub";
+    }
+  };
+  foot.querySelector(".cp-cancel").focus();
+}
+
+const ghEvents = [
+  { id: "COMMENT", label: "Comment", tip: "General feedback, without approving or blocking" },
+  { id: "APPROVE", label: "Approve", tip: "Approve the change for merging" },
+  { id: "REQUEST_CHANGES", label: "Request changes", tip: "Feedback that has to be addressed before merging" },
+];
+
+async function openGitHubReview() {
+  const body = el(`<div class="gh-confirm"><p class="muted">Reading the pull request…</p></div>`);
+  openModal("Send review to GitHub", body, "narrow");
+  let plan;
+  try {
+    plan = await api("Reviews.PlanGitHubReview");
+  } catch (e) {
+    body.innerHTML = `<p class="gh-place bad">${esc(errText(e))}</p>`;
+    return;
+  }
+  const keep = state.ghReview?.path === state.opened?.path ? state.ghReview : null;
+  const draft = (state.ghReview = { path: state.opened?.path, summary: keep?.summary ?? "", event: keep?.event ?? plan.suggest });
+  if (plan.pr.own && draft.event !== "COMMENT") draft.event = "COMMENT";
+  body.innerHTML = "";
+  body.append(prHead(plan.pr));
+  const list = el(`<div class="gh-list"><h4>Comments (${plan.comments.length})</h4></div>`);
+  if (!plan.comments.length) list.append(el(`<p class="muted small">None picked. "Add to GitHub review" on a comment puts it here; you can also send just a summary and a decision.</p>`));
+  for (const pl of plan.comments) {
+    const item = el(`<div class="gh-item">${placeLine(pl)}</div>`);
+    const pre = el(`<pre class="commit gh-text"></pre>`);
+    pre.textContent = pl.inline ? pl.body : "(goes into the review text below the summary)\n\n" + pl.body;
+    const drop = el(`<button class="na" title="Leave it out of the review">Remove</button>`);
+    drop.onclick = async () => {
+      if (await act("ToggleForGitHub", pl.id)) openGitHubReview();
+    };
+    item.append(pre, drop);
+    list.append(item);
+  }
+  const loose = plan.comments.filter((pl) => !pl.inline && pl.inFile);
+  body.append(list, el(`<h4>Summary</h4>`));
+  const ta = el(`<textarea rows="4" placeholder="The review's overall text (optional for approve)"></textarea>`);
+  ta.value = draft.summary;
+  ta.oninput = () => {
+    draft.summary = ta.value;
+  };
+  ta.onkeydown = (e) => e.stopPropagation();
+  body.append(ta);
+  if (loose.length || plan.comments.some((pl) => !pl.inFile))
+    body.append(el(`<p class="muted small">Comments GitHub cannot put on a line go into the review text, after your summary, with their file and line.</p>`));
+  const dec = el(`<div class="gh-events"><h4>Decision</h4></div>`);
+  const sug = ghEvents.find((x) => x.id === plan.suggest);
+  for (const ev of ghEvents) {
+    const off = plan.pr.own && ev.id !== "COMMENT";
+    const row = el(`<label class="gh-event${off ? " off" : ""}" title="${esc(off ? "GitHub does not let you do this on your own pull request" : ev.tip)}">
+      <input type="radio" name="gh-event" value="${ev.id}"${draft.event === ev.id ? " checked" : ""}${off ? " disabled" : ""}> ${ev.label}
+      <span class="muted small">${esc(ev.tip)}${ev.id === plan.suggest && sug ? " · margin suggests this from your verdicts" : ""}</span></label>`);
+    row.querySelector("input").onchange = () => {
+      draft.event = ev.id;
+      label();
+    };
+    dec.append(row);
+  }
+  body.append(dec);
+  const foot = el(`<div class="cp-foot"><span class="muted small">Posted at once, under your name, for everyone on the pull request to see. margin cannot take it back.</span>
+    <span class="spacer"></span><button class="small cp-cancel">Cancel</button><button class="primary small cp-save"></button></div>`);
+  body.append(foot);
+  const save = foot.querySelector(".cp-save");
+  const label = () => {
+    save.textContent = { COMMENT: "Submit comments", APPROVE: "Approve", REQUEST_CHANGES: "Request changes" }[draft.event] + ` on PR #${plan.pr.number}`;
+  };
+  label();
+  foot.querySelector(".cp-cancel").onclick = () => closeModal();
+  save.onclick = async () => {
+    save.disabled = true;
+    save.textContent = "Sending…";
+    if (await act("SubmitGitHubReview", draft.event, draft.summary)) {
+      state.ghReview = null;
+      closeModal();
+      renderGitHubButton();
+      toast(`Review sent to PR #${plan.pr.number}`);
+      loadThreads();
+    } else {
+      save.disabled = false;
+      label();
+    }
+  };
+}
+
 // Overlays: peek, commit, export, help
 
 async function openPeek(file, line) {
@@ -2725,7 +3187,7 @@ async function openCommit(sha) {
 async function openExport() {
   const body = el(`<div class="export"><div class="cp-labels"><button class="chip on" data-f="md">Markdown</button><button class="chip" data-f="github">GitHub review</button>
     <span class="spacer"></span><button class="primary small">Copy</button></div><pre class="commit">Loading…</pre>
-    <p class="muted small">margin never posts anything: copy this and post it yourself.</p></div>`);
+    <p class="muted small">Copy this and post it yourself, or use the GitHub buttons on your comments.</p></div>`);
   const pre = body.querySelector("pre");
   const load = async (f) => {
     body.querySelectorAll("[data-f]").forEach((b) => b.classList.toggle("on", b.dataset.f === f));
