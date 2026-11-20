@@ -37,7 +37,7 @@ func Highlight(filename string, lines []string) [][]Span {
 	if lexer == nil {
 		lexer = lexers.Fallback
 	}
-	style, light := styles.Get("github-dark"), styles.Get("github")
+	style, light := railscasts, styles.Get("github")
 	it, err := chroma.Coalesce(lexer).Tokenise(nil, content)
 	if err != nil {
 		for i, l := range lines {
