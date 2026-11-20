@@ -252,9 +252,17 @@ GitHub only takes inline comments on lines its diff shows. Comments are matched 
 request's lines by their text, so local edits that moved a line do not misplace them. A comment
 outside the diff goes on its file (one comment) or into the review text with its line (a review).
 A posted comment is marked *on GitHub* and links to it; it can no longer be reworded. Its card
-shows the reactions and replies it got on GitHub, pulled when the review opens, when the window
-gets focus again (at most every 30 seconds) and with *↻ GitHub*. *Resolve on GitHub* (or
-*Unresolve*) appears when GitHub lets you change the thread's state. Agent notes and
+shows the reactions and replies it got on GitHub.
+
+Everyone else's review threads come into the review too. Each one is drawn on its line, found by
+the line's text in the pull request's diff, with its replies and reactions; resolved threads are
+folded until you click their header. *Resolve on GitHub* (or *Unresolve*) appears on any thread
+GitHub lets you change. *GitHub · N open* in the toolbar opens a panel with every thread: those on
+lines the review shows (with *Go to line*), those on lines it does not show or that GitHub marks
+outdated, the resolved ones, and the pull request's conversation and review texts.
+
+margin pulls all of it when the review opens and when the window gets focus again (at most every
+30 seconds). **↻** in the toolbar pulls again at once, reading the pull request's diff afresh too. Agent notes and
 fix requests are not posted; *Export* still gives everything as text to paste yourself.
 
 ## Settings

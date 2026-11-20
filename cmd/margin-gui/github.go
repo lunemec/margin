@@ -82,7 +82,8 @@ func prView(d *doc.Doc, pr *github.PR) GitHubView {
 	if v.Local == "" {
 		v.Local, _ = gitx.RevParse(d.Review.RepoDir(), "HEAD")
 	}
-	v.Differs = v.Local != pr.HeadSHA
+	// An unknown local commit (not a git checkout) says nothing about whether the two differ.
+	v.Differs = v.Local != "" && v.Local != pr.HeadSHA
 	return v
 }
 

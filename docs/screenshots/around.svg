@@ -67,18 +67,14 @@
 <text x="44.8" y="573" textLength="28.8" lengthAdjust="spacingAndGlyphs" fill="#7d8590"> 24</text>
 <text x="73.6" y="573" textLength="9.6" lengthAdjust="spacingAndGlyphs" fill="#38c5cf">┃</text>
 <text x="83.2" y="573" textLength="28.8" lengthAdjust="spacingAndGlyphs" fill="#7d8590" font-weight="bold">┊  </text>
-<text x="112.0" y="573" textLength="38.4" lengthAdjust="spacingAndGlyphs" fill="#ff7b71">func</text>
-<text x="160.0" y="573" textLength="19.2" lengthAdjust="spacingAndGlyphs" fill="#e6edf3">(s</text>
-<text x="188.8" y="573" textLength="9.6" lengthAdjust="spacingAndGlyphs" fill="#ff7b71" font-weight="bold">*</text>
-<text x="198.4" y="573" textLength="57.6" lengthAdjust="spacingAndGlyphs" fill="#e6edf3">Store)</text>
-<text x="265.6" y="573" textLength="28.8" lengthAdjust="spacingAndGlyphs" fill="#d2a8ff" font-weight="bold">Add</text>
-<text x="294.4" y="573" textLength="38.4" lengthAdjust="spacingAndGlyphs" fill="#e6edf3">(sku</text>
-<text x="342.4" y="573" textLength="57.6" lengthAdjust="spacingAndGlyphs" fill="#ff7b71">string</text>
-<text x="400.0" y="573" textLength="9.6" lengthAdjust="spacingAndGlyphs" fill="#e6edf3">,</text>
-<text x="419.2" y="573" textLength="28.8" lengthAdjust="spacingAndGlyphs" fill="#e6edf3">qty</text>
-<text x="457.6" y="573" textLength="28.8" lengthAdjust="spacingAndGlyphs" fill="#ff7b71">int</text>
-<text x="486.4" y="573" textLength="9.6" lengthAdjust="spacingAndGlyphs" fill="#e6edf3">)</text>
-<text x="505.6" y="573" textLength="9.6" lengthAdjust="spacingAndGlyphs" fill="#e6edf3">{</text>
+<text x="112.0" y="573" textLength="38.4" lengthAdjust="spacingAndGlyphs" fill="#cc7833">func</text>
+<text x="150.4" y="573" textLength="115.2" lengthAdjust="spacingAndGlyphs" fill="#e6e1dc"> (s *Store) </text>
+<text x="265.6" y="573" textLength="28.8" lengthAdjust="spacingAndGlyphs" fill="#ffc66d">Add</text>
+<text x="294.4" y="573" textLength="48.0" lengthAdjust="spacingAndGlyphs" fill="#e6e1dc">(sku </text>
+<text x="342.4" y="573" textLength="57.6" lengthAdjust="spacingAndGlyphs" fill="#da4938">string</text>
+<text x="400.0" y="573" textLength="57.6" lengthAdjust="spacingAndGlyphs" fill="#e6e1dc">, qty </text>
+<text x="457.6" y="573" textLength="28.8" lengthAdjust="spacingAndGlyphs" fill="#da4938">int</text>
+<text x="486.4" y="573" textLength="28.8" lengthAdjust="spacingAndGlyphs" fill="#e6e1dc">) {</text>
 <text x="947.2" y="573" textLength="9.6" lengthAdjust="spacingAndGlyphs" fill="#161b22">│</text>
 <text x="956.8" y="573" textLength="211.2" lengthAdjust="spacingAndGlyphs" fill="#c9d1d9">   TestAuditLogRecords</text>
 <rect x="44.8" y="579" width="28.8" height="21" fill="#58a6ff"/>
@@ -86,31 +82,29 @@
 <text x="44.8" y="594" textLength="28.8" lengthAdjust="spacingAndGlyphs" fill="#0d1117" font-weight="bold"> 25</text>
 <text x="73.6" y="594" textLength="9.6" lengthAdjust="spacingAndGlyphs" fill="#38c5cf">┃</text>
 <text x="83.2" y="594" textLength="28.8" lengthAdjust="spacingAndGlyphs" fill="#7d8590" font-weight="bold">┊  </text>
-<text x="150.4" y="594" textLength="48.0" lengthAdjust="spacingAndGlyphs" fill="#e6edf3">s.mu.</text>
-<text x="198.4" y="594" textLength="38.4" lengthAdjust="spacingAndGlyphs" fill="#d2a8ff" font-weight="bold">Lock</text>
-<text x="236.8" y="594" textLength="19.2" lengthAdjust="spacingAndGlyphs" fill="#e6edf3">()</text>
+<text x="112.0" y="594" textLength="86.4" lengthAdjust="spacingAndGlyphs" fill="#e6e1dc">    s.mu.</text>
+<text x="198.4" y="594" textLength="38.4" lengthAdjust="spacingAndGlyphs" fill="#ffc66d">Lock</text>
+<text x="236.8" y="594" textLength="19.2" lengthAdjust="spacingAndGlyphs" fill="#e6e1dc">()</text>
 <text x="947.2" y="594" textLength="9.6" lengthAdjust="spacingAndGlyphs" fill="#161b22">│</text>
 <text x="956.8" y="594" textLength="134.4" lengthAdjust="spacingAndGlyphs" fill="#c9d1d9">   TestReserve</text>
 <text x="44.8" y="615" textLength="28.8" lengthAdjust="spacingAndGlyphs" fill="#7d8590"> 26</text>
 <text x="73.6" y="615" textLength="9.6" lengthAdjust="spacingAndGlyphs" fill="#38c5cf">┃</text>
 <text x="83.2" y="615" textLength="28.8" lengthAdjust="spacingAndGlyphs" fill="#7d8590" font-weight="bold">┊  </text>
-<text x="150.4" y="615" textLength="48.0" lengthAdjust="spacingAndGlyphs" fill="#ff7b71">defer</text>
-<text x="208.0" y="615" textLength="48.0" lengthAdjust="spacingAndGlyphs" fill="#e6edf3">s.mu.</text>
-<text x="256.0" y="615" textLength="57.6" lengthAdjust="spacingAndGlyphs" fill="#d2a8ff" font-weight="bold">Unlock</text>
-<text x="313.6" y="615" textLength="19.2" lengthAdjust="spacingAndGlyphs" fill="#e6edf3">()</text>
+<text x="150.4" y="615" textLength="48.0" lengthAdjust="spacingAndGlyphs" fill="#cc7833">defer</text>
+<text x="198.4" y="615" textLength="57.6" lengthAdjust="spacingAndGlyphs" fill="#e6e1dc"> s.mu.</text>
+<text x="256.0" y="615" textLength="57.6" lengthAdjust="spacingAndGlyphs" fill="#ffc66d">Unlock</text>
+<text x="313.6" y="615" textLength="19.2" lengthAdjust="spacingAndGlyphs" fill="#e6e1dc">()</text>
 <text x="947.2" y="615" textLength="9.6" lengthAdjust="spacingAndGlyphs" fill="#161b22">│</text>
 <text x="956.8" y="615" textLength="499.2" lengthAdjust="spacingAndGlyphs" fill="#c9d1d9">   TestReserve/insufficient stock leaves store uncha</text>
 <text x="44.8" y="636" textLength="28.8" lengthAdjust="spacingAndGlyphs" fill="#7d8590"> 27</text>
 <text x="73.6" y="636" textLength="9.6" lengthAdjust="spacingAndGlyphs" fill="#38c5cf">┃</text>
 <text x="83.2" y="636" textLength="28.8" lengthAdjust="spacingAndGlyphs" fill="#7d8590" font-weight="bold">┊  </text>
-<text x="150.4" y="636" textLength="115.2" lengthAdjust="spacingAndGlyphs" fill="#e6edf3">s.items[sku]</text>
-<text x="275.2" y="636" textLength="19.2" lengthAdjust="spacingAndGlyphs" fill="#ff7b71" font-weight="bold">+=</text>
-<text x="304.0" y="636" textLength="28.8" lengthAdjust="spacingAndGlyphs" fill="#e6edf3">qty</text>
+<text x="112.0" y="636" textLength="220.8" lengthAdjust="spacingAndGlyphs" fill="#e6e1dc">    s.items[sku] += qty</text>
 <text x="947.2" y="636" textLength="9.6" lengthAdjust="spacingAndGlyphs" fill="#161b22">│</text>
 <text x="956.8" y="636" textLength="124.8" lengthAdjust="spacingAndGlyphs" fill="#7d8590">   and 1 more</text>
 <text x="44.8" y="657" textLength="28.8" lengthAdjust="spacingAndGlyphs" fill="#7d8590"> 28</text>
 <text x="83.2" y="657" textLength="28.8" lengthAdjust="spacingAndGlyphs" fill="#7d8590" font-weight="bold">┊  </text>
-<text x="112.0" y="657" textLength="9.6" lengthAdjust="spacingAndGlyphs" fill="#e6edf3">}</text>
+<text x="112.0" y="657" textLength="9.6" lengthAdjust="spacingAndGlyphs" fill="#e6e1dc">}</text>
 <text x="947.2" y="657" textLength="9.6" lengthAdjust="spacingAndGlyphs" fill="#161b22">│</text>
 <text x="956.8" y="657" textLength="144.0" lengthAdjust="spacingAndGlyphs" fill="#7d8590"> ↓ 5 more below</text>
 <rect x="16.0" y="663" width="96.0" height="21" fill="#161b22"/>
