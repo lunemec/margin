@@ -36,6 +36,13 @@ type ReaderView struct {
 	Seen      map[string]string `json:"seen"`
 }
 
+type ReaderUpdate struct {
+	Path     string     `json:"path"`
+	Reader   ReaderView `json:"reader"`
+	Counts   tui.Counts `json:"counts"`
+	Revision int        `json:"readerRevision"`
+}
+
 type QuestionView struct {
 	state.Question
 	Answered bool `json:"answered"`
@@ -113,7 +120,7 @@ func keys(m map[string]bool) []string {
 }
 
 // SetVerdict records the reader's verdict on a stop: good, changes or unsure; the same one again clears it.
-func (r *Reviews) SetVerdict(station, v string) (*View, error) {
+func (r *Reviews) SetVerdict(station, v string) (*ReaderUpdate, error) {
 	if !slices.Contains([]string{verdict.Good, verdict.Changes, verdict.Unsure}, v) {
 		return nil, fmt.Errorf("unknown verdict %q", v)
 	}
@@ -128,7 +135,7 @@ func (r *Reviews) SetVerdict(station, v string) (*View, error) {
 }
 
 // SetOrient records whether the change makes sense as done; design says why not when the answer is no.
-func (r *Reviews) SetOrient(answer, design string) (*View, error) {
+func (r *Reviews) SetOrient(answer, design string) (*ReaderUpdate, error) {
 	if !slices.Contains([]string{verdict.OrientYes, verdict.OrientNo, verdict.OrientUnsure, ""}, answer) {
 		return nil, fmt.Errorf("unknown answer %q", answer)
 	}
@@ -142,8 +149,13 @@ func (r *Reviews) SetOrient(answer, design string) (*View, error) {
 }
 
 // MarkNote toggles a mark on the note with key: reviewed, flagged or dismissed.
-func (r *Reviews) MarkNote(key, mark string) (*View, error) {
+func (r *Reviews) MarkNote(key, mark string) (*ReaderUpdate, error) {
 	return r.change(func(d *doc.Doc, st *state.State) error {
+		notes := d.CodeNotes()
+		i := slices.IndexFunc(notes, func(n *doc.Note) bool { return n.Key == key })
+		if i < 0 {
+			return errors.New("that note is no longer in the review")
+		}
 		var set map[string]bool
 		switch mark {
 		case "reviewed":
@@ -160,19 +172,15 @@ func (r *Reviews) MarkNote(key, mark string) (*View, error) {
 			return nil
 		}
 		set[key] = true
-		if mark == "reviewed" {
-			for _, n := range d.CodeNotes() {
-				if n.Key == key && n.Changed != "" {
-					st.Seen[key] = n.Changed
-				}
-			}
+		if mark == "reviewed" && notes[i].Changed != "" {
+			st.Seen[key] = notes[i].Changed
 		}
 		return nil
 	})
 }
 
 // AddComment saves a draft review comment on a line of a stop; SendComments hands the drafts to the agent.
-func (r *Reviews) AddComment(in CommentInput) (*View, error) {
+func (r *Reviews) AddComment(in CommentInput) (*ReaderUpdate, error) {
 	body := text.Sanitize(strings.TrimSpace(in.Text))
 	if body == "" {
 		return nil, errors.New("the comment is empty")
@@ -221,7 +229,7 @@ func lineQuestion(s *doc.Station, p *doc.Part, line int, id, body string) state.
 }
 
 // DeleteComment removes a draft; a sent comment stays, since the agent has it.
-func (r *Reviews) DeleteComment(id string) (*View, error) {
+func (r *Reviews) DeleteComment(id string) (*ReaderUpdate, error) {
 	return r.change(func(_ *doc.Doc, st *state.State) error {
 		i := slices.IndexFunc(st.Questions, func(q state.Question) bool { return q.ID == id })
 		if i < 0 {
@@ -236,13 +244,13 @@ func (r *Reviews) DeleteComment(id string) (*View, error) {
 }
 
 // EditComment rewords a draft; a sent comment stays as the agent got it.
-func (r *Reviews) EditComment(id, body string) (*View, error) {
+func (r *Reviews) EditComment(id, body string) (*ReaderUpdate, error) {
 	body = text.Sanitize(strings.TrimSpace(body))
 	return r.change(func(_ *doc.Doc, st *state.State) error { return st.EditDraft(id, body) })
 }
 
 // SendComments types every draft into the agent's terminal as one message and marks them sent.
-func (r *Reviews) SendComments() (*View, error) {
+func (r *Reviews) SendComments() (*ReaderUpdate, error) {
 	path := r.current()
 	if !r.agents.Running(path) {
 		return nil, errors.New("start the agent first; the drafts stay until then")
@@ -284,7 +292,7 @@ func (r *Reviews) SendComments() (*View, error) {
 
 // SendFixes asks the agent to fix the problems the reader agreed with and the stops they judged as
 // needing changes, all not sent yet; each becomes a sent comment the agent resolves.
-func (r *Reviews) SendFixes() (*View, error) {
+func (r *Reviews) SendFixes() (*ReaderUpdate, error) {
 	path := r.current()
 	if !r.agents.Running(path) {
 		return nil, errors.New("start the agent first; what you want fixed waits until then")
@@ -315,30 +323,35 @@ func (r *Reviews) SendFixes() (*View, error) {
 	return v, nil
 }
 
-// change loads the reader's state, applies fn, saves it and returns the view built from it.
-func (r *Reviews) change(fn func(*doc.Doc, *state.State) error) (*View, error) {
+// Reader returns just the state shared with other viewers.
+func (r *Reviews) Reader() (*ReaderUpdate, error) { return r.change(nil) }
+
+// change reloads the shared state before any edit. The document backing the window is read-only.
+func (r *Reviews) change(fn func(*doc.Doc, *state.State) error) (*ReaderUpdate, error) {
 	r.stateMu.Lock()
 	defer r.stateMu.Unlock()
-	path := r.current()
-	if path == "" {
-		return nil, errors.New("no review open")
-	}
-	d, err := r.build(path)
+	d, err := r.document(0)
 	if err != nil {
 		return nil, err
 	}
-	st, err := state.Load(review.StatePath(path))
+	st, err := state.Load(review.StatePath(d.Review.Path))
 	if err != nil {
 		return nil, err
 	}
-	if err := fn(d, st); err != nil {
-		return nil, err
+	if fn != nil {
+		if err := fn(d, st); err != nil {
+			return nil, err
+		}
+		if err := st.Save(); err != nil {
+			return nil, err
+		}
 	}
-	if err := st.Save(); err != nil {
-		return nil, err
-	}
-	v := viewOf(d)
-	v.Reader = readerOf(d, st)
-	v.Counts = tui.CountsOf(d, st)
-	return v, nil
+	v := r.readerUpdate(d, st)
+	return &v, nil
+}
+
+// readerUpdate is called with stateMu held so replies can be applied in order.
+func (r *Reviews) readerUpdate(d *doc.Doc, st *state.State) ReaderUpdate {
+	r.readerRevision++
+	return ReaderUpdate{Path: d.Review.Path, Reader: readerOf(d, st), Counts: tui.CountsOf(d, st), Revision: r.readerRevision}
 }
