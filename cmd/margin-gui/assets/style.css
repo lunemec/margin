@@ -625,6 +625,8 @@ button.chip.chip-issue.on { background: var(--issue-tint); border-color: var(--i
 .st .num .vdot { margin-top: 4px; }
 
 #walkthrough-status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+#walkthrough-feedback { bottom: auto; transform: none; pointer-events: none; max-width: min(340px, calc(100vw - 16px)); }
+#walkthrough-feedback:empty { clip-path: inset(50%); }
 .walkthrough-spinner { display: inline-block; width: 9px; height: 9px; margin-right: 5px; border: 1px solid currentColor; border-right-color: transparent; border-radius: 50%; }
 @media (prefers-reduced-motion: no-preference) {
   .walkthrough-spinner { animation: walkthrough-spin .8s linear infinite; }

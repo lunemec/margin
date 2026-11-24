@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"slices"
@@ -9,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/redrick/margin/internal/cli"
+	"github.com/redrick/margin/internal/coverage"
 	"github.com/redrick/margin/internal/review"
 	"github.com/redrick/margin/internal/state"
 	"github.com/redrick/margin/internal/verdict"
@@ -286,6 +288,125 @@ func TestContinueWalkthroughWaitsForReader(t *testing.T) {
 	if !strings.Contains(prompt, "--continue") || !strings.Contains(prompt, "Wait for the reader") ||
 		strings.Contains(prompt, "--new") || !strings.Contains(prompt, "pending-checkpoint") {
 		t.Fatalf("continuing a saved walkthrough changed the continuation contract: %q", prompt)
+	}
+}
+
+func TestWalkthroughSwitchReusesAndRefreshesSnapshot(t *testing.T) {
+	path, repo := prWalkFixture(t)
+	writeWalkReview(t, path, prWalkGrouped)
+	r := &Reviews{path: path}
+	original, err := r.Current()
+	if err != nil {
+		t.Fatal(err)
+	}
+	switchTo := func(mode walkMode) *View {
+		t.Helper()
+		view, err := r.SelectWalkthrough(path, mode)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return view
+	}
+	fileDoc := r.walk.alternate
+	switchTo(fileWalk)
+	if r.loaded != fileDoc {
+		t.Fatal("switch rebuilt an unchanged comparison")
+	}
+	guided := switchTo(agentWalk)
+	if &guided.Stations[0] != &original.Stations[0] || guided.Version <= original.Version {
+		t.Fatal("switch did not reuse the rendered view with a fresh version")
+	}
+
+	writeWalkReview(t, path, prWalkGrouped+prWalkLateNote)
+	file := switchTo(fileWalk)
+	if got := walkStop(t, file, "file:retired.txt").Notes; len(got) != 1 || got[0].AuthoredRef != "shipping:1" {
+		t.Fatalf("switch missed the updated review or its authored reference: %+v", got)
+	}
+	set := coverage.Set{Executable: map[string][]int{"route.txt": {1}}}
+	if err := set.Save(review.CoveragePath(path)); err != nil {
+		t.Fatal(err)
+	}
+	if guided = switchTo(agentWalk); guided.Coverage == nil || walkStop(t, guided, "shipping").Cov == nil {
+		t.Fatal("switch missed the new coverage")
+	}
+	if file = switchTo(fileWalk); file.Coverage == nil || walkStop(t, file, "file:route.txt").Cov == nil {
+		t.Fatal("reused file view lost coverage")
+	}
+	const preparation = "snapshot-preparation"
+	if err := updateReviewResume(path, func(saved *reviewResume) bool {
+		saved.WalkPreparation = preparation
+		return true
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if pending, err := r.Current(); err != nil || pending.Walkthrough.Ready {
+		t.Fatalf("could not load a pending snapshot: %v", err)
+	}
+	if err := markWalkthroughReady([]string{"--review", path, "--preparation", preparation}); err != nil {
+		t.Fatal(err)
+	}
+	if guided = switchTo(agentWalk); !guided.Walkthrough.Ready {
+		t.Fatal("switch missed the walkthrough publication")
+	}
+	if err := os.WriteFile(filepath.Join(repo, "new.txt"), []byte("new route\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	file = switchTo(fileWalk)
+	if stop := walkStop(t, file, "file:new.txt"); stop.Parts[0].File != "new.txt" {
+		t.Fatalf("switch missed a new file: %+v", stop.Parts)
+	}
+}
+
+func TestWalkthroughSwitchRefreshesStagedContents(t *testing.T) {
+	path, repo := prWalkFixture(t)
+	git := func(args ...string) string {
+		t.Helper()
+		out, err := exec.Command("git", append([]string{"-C", repo}, args...)...).CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+		return strings.TrimSpace(string(out))
+	}
+	git("init", "-q")
+	git("add", "route.txt")
+	git("-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "Base")
+	sha := git("rev-parse", "HEAD")
+	yaml := strings.Replace(prWalkHeader, "base_dir: base", "base: "+sha+"\nstaged: true", 1)
+	yaml += `stations:
+  - id: shipping
+    title: Select the new route
+    what: Change the route selector.
+    parts:
+      - file: route.txt
+        hunks: true
+`
+	if err := os.WriteFile(path, []byte(yaml), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stage := func(line string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(repo, "route.txt"), []byte(line+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		git("add", "route.txt")
+	}
+	stage("route by start")
+	r := &Reviews{path: path}
+	if _, err := r.Current(); err != nil {
+		t.Fatal(err)
+	}
+	alternate := r.walk.alternate
+	if _, err := r.SelectWalkthrough(path, fileWalk); err != nil || r.loaded != alternate {
+		t.Fatalf("unchanged index was not reused: %v", err)
+	}
+	stage("route by final")
+	view, err := r.SelectWalkthrough(path, agentWalk)
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := walkStop(t, view, "shipping").Parts[0].Rows[0]
+	if len(row.Spans) != 1 || row.Spans[0].Text != "route by final" {
+		t.Fatalf("switch used old index content: %+v", row)
 	}
 }
 

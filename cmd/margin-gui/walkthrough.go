@@ -25,6 +25,8 @@ const (
 	agentWalk walkMode = "agent"
 )
 
+var errWalkPreparing = errors.New("the agent walkthrough is still being prepared")
+
 type WalkthroughView struct {
 	Mode       walkMode         `json:"mode"`
 	Ready      bool             `json:"ready"`
@@ -180,7 +182,7 @@ func buildWalkthrough(rv *review.Review, files *source.Files, saved reviewResume
 	mode := current
 	if requested != "" {
 		if !ready && requested == agentWalk {
-			return nil, walkthrough{}, errors.New("the agent walkthrough is still being prepared")
+			return nil, walkthrough{}, errWalkPreparing
 		}
 		mode = requested
 	}
@@ -205,12 +207,12 @@ func buildWalkthrough(rv *review.Review, files *source.Files, saved reviewResume
 	byFile.Stations = generated
 	byFile.Skip = nil
 	d := doc.Build(&byFile, files)
+	walk.noteRefs = projectWalkNotes(d, agent)
 	if mode == agentWalk {
 		walk.alternate = d
 		return agent, walk, nil
 	}
 	walk.alternate = agent
-	walk.noteRefs = projectWalkNotes(d, agent)
 	return d, walk, nil
 }
 

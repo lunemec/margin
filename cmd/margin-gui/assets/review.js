@@ -217,6 +217,7 @@ export function renderWalkthrough() {
   const opened = state.opened;
   const walk = state.view?.path === opened?.path ? state.view?.walkthrough : null;
   $("#walkthrough").classList.toggle("hidden", !walk);
+  if (!walk || walk.ready) $("#walkthrough-feedback").textContent = "";
   if (!walk) return;
   const preparing = !walk.ready && (opened.launchingWalkthrough || (opened.walkAgentLive && opened.agent?.walkPreparing));
   const label = walk.ready ? (walk.offer ? "Guided walk is ready" : "") :
@@ -235,13 +236,36 @@ export function renderWalkthrough() {
   $("#walkthrough-agent").title = walk.ready ? "Follow the agent’s groups of related changes across files" : label;
 }
 
-async function selectWalkthrough(mode, button) {
+let walkthroughFeedbackTimer;
+function showWalkthroughFeedback(event) {
+  const feedback = $("#walkthrough-feedback");
+  const opened = state.opened;
+  feedback.textContent = opened.launchingWalkthrough || opened.walkAgentLive || opened.walkFailure
+    ? $("#walkthrough-status").textContent
+    : "Start the agent first to prepare the guided walk";
+  const button = event.currentTarget.getBoundingClientRect();
+  const x = event.detail ? event.clientX : button.left + button.width / 2;
+  const y = event.detail ? event.clientY : button.bottom;
+  const gap = 8;
+  const { offsetWidth: width, offsetHeight: height } = feedback;
+  feedback.style.left = Math.max(gap, Math.min(x + gap, window.innerWidth - width - gap)) + "px";
+  const top = y + gap + height <= window.innerHeight - gap ? y + gap : y - height - gap;
+  feedback.style.top = Math.max(gap, top) + "px";
+  clearTimeout(walkthroughFeedbackTimer);
+  walkthroughFeedbackTimer = setTimeout(() => feedback.textContent = "", 3500);
+}
+
+async function selectWalkthrough(mode, event) {
   const opened = state.opened;
   const walk = state.view?.walkthrough;
   if (!walk || !opened || opened.restoringPosition || opened.switchingWalkthrough || changingMode === opened) return;
-  if (mode === "agent" && !walk.ready) return;
+  if (mode === "agent" && !walk.ready) {
+    showWalkthroughFeedback(event);
+    return;
+  }
   const changing = mode !== walk.mode;
   if ((!changing && !walk.offer) || (changing && !beginDiscussionAction())) return;
+  const button = event.currentTarget;
   const restoreFocus = document.activeElement === button;
   opened.switchingWalkthrough = true;
   if (changing) {
@@ -297,8 +321,8 @@ async function selectWalkthrough(mode, button) {
   }
 }
 
-$("#walkthrough-file").onclick = (e) => selectWalkthrough("file", e.currentTarget);
-$("#walkthrough-agent").onclick = (e) => selectWalkthrough("agent", e.currentTarget);
+$("#walkthrough-file").onclick = (e) => selectWalkthrough("file", e);
+$("#walkthrough-agent").onclick = (e) => selectWalkthrough("agent", e);
 
 // trackFresh marks notes that appeared since the last load, so notes the agent adds elsewhere are not missed.
 function trackFresh(view) {

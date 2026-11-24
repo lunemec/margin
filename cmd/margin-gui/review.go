@@ -34,6 +34,7 @@ type Reviews struct {
 	path           string
 	loaded         *doc.Doc
 	walk           walkthrough
+	walkSnapshot   *walkthroughSnapshot
 	version        int
 	readerRevision int
 	watcher        *watch.Watcher
@@ -44,6 +45,13 @@ type Reviews struct {
 	// recovered lists files put back on start, from a run margin did not live to undo.
 	recovered  []string
 	recoverErr string
+}
+
+type walkthroughSnapshot struct {
+	inputs      *source.Snapshot
+	preparation string
+	views       map[walkMode]*View
+	highlights  map[string][][]render.Span
 }
 
 type Opened struct {
@@ -299,7 +307,7 @@ func (r *Reviews) PickFile() (string, error) {
 // Current builds the view of the open review and watches the files it shows for changes.
 func (r *Reviews) Current() (*View, error) { return r.loadCurrent("", "") }
 
-// SelectWalkthrough changes the active document only after the requested view has been built.
+// SelectWalkthrough reuses the loaded comparison when its inputs still match.
 func (r *Reviews) SelectWalkthrough(path string, mode walkMode) (*View, error) {
 	if mode != fileWalk && mode != agentWalk {
 		return nil, errors.New("unknown walkthrough view")
@@ -311,22 +319,28 @@ func (r *Reviews) loadCurrent(expectedPath string, requested walkMode) (*View, e
 	r.loadMu.Lock()
 	defer r.loadMu.Unlock()
 	r.mu.Lock()
-	path, version, current := r.path, r.version, r.walk.mode
+	path, version := r.path, r.version
+	d, walk, snapshot := r.loaded, r.walk, r.walkSnapshot
 	r.mu.Unlock()
 	if path == "" || (expectedPath != "" && path != expectedPath) {
 		return nil, errors.New("the open review changed")
 	}
 	saved := readReviewResume(path)
-	d, walk, err := r.build(path, saved, current, requested)
-	var v *View
-	if err == nil {
-		v = viewOf(d)
-		for i := range v.Stations {
-			for j := range v.Stations[i].Notes {
-				note := &v.Stations[i].Notes[j]
-				note.AuthoredRef = walk.noteRefs[note.Key]
-			}
+	reused := requested != "" && snapshot != nil && saved.WalkPreparation == snapshot.preparation && snapshot.inputs.Matches()
+	var err error
+	if reused {
+		if requested == agentWalk && !walk.ready {
+			err = errWalkPreparing
+		} else if requested != walk.mode {
+			d, walk.alternate = walk.alternate, d
+			walk.mode = requested
 		}
+	} else {
+		d, walk, snapshot, err = r.build(path, saved, walk.mode, requested)
+	}
+	var v View
+	if err == nil {
+		v = renderedWalkthrough(d, walk, snapshot)
 	}
 	r.stateMu.Lock()
 	defer r.stateMu.Unlock()
@@ -345,9 +359,7 @@ func (r *Reviews) loadCurrent(expectedPath string, requested walkMode) (*View, e
 	if err != nil {
 		return nil, err
 	}
-	paths := append(d.WatchPaths(), review.StatePath(path), review.CommentsPath(path))
 	if walk.mode != "" {
-		paths = append(paths, walkReadyPath(path))
 		if saved.WalkMode == "" && walk.mode == fileWalk && !walk.ready && migrateFileProgress(st, walk.legacyIDs) {
 			if err := st.Save(); err != nil {
 				return nil, err
@@ -377,12 +389,44 @@ func (r *Reviews) loadCurrent(expectedPath string, requested walkMode) (*View, e
 			FocusAreas: walkthroughFocusAreas(authored),
 		}
 	}
-	r.watch(paths)
-	r.loaded, r.walk = d, walk
+	if !reused {
+		paths := append(d.WatchPaths(), review.StatePath(path), review.CommentsPath(path))
+		if snapshot != nil {
+			paths = snapshot.inputs.AppendWatchPaths(append(paths, walk.alternate.WatchPaths()...))
+		}
+		r.watch(paths)
+	}
+	r.loaded, r.walk, r.walkSnapshot = d, walk, snapshot
 	r.version++
 	v.Version = r.version
 	v.ReaderUpdate = r.readerUpdate(d, st)
-	return v, nil
+	return &v, nil
+}
+
+func renderedWalkthrough(d *doc.Doc, walk walkthrough, snapshot *walkthroughSnapshot) View {
+	highlights := map[string][][]render.Span{}
+	if snapshot != nil {
+		if v := snapshot.views[walk.mode]; v != nil {
+			return *v
+		}
+		highlights = snapshot.highlights
+	}
+	v := viewOf(d, highlights)
+	if walk.mode == fileWalk {
+		for i := range v.Stations {
+			for j := range v.Stations[i].Notes {
+				note := &v.Stations[i].Notes[j]
+				note.AuthoredRef = walk.noteRefs[note.Key]
+			}
+		}
+	}
+	if snapshot != nil {
+		snapshot.views[walk.mode] = v
+		if len(snapshot.views) == 2 {
+			snapshot.highlights = nil
+		}
+	}
+	return *v
 }
 
 // document is the snapshot backing the window. Test indices belong to a specific version.
@@ -404,26 +448,41 @@ func (r *Reviews) current() string {
 	return r.path
 }
 
-func (r *Reviews) build(path string, saved reviewResume, current, requested walkMode) (*doc.Doc, walkthrough, error) {
+func (r *Reviews) build(path string, saved reviewResume, current, requested walkMode) (*doc.Doc, walkthrough, *walkthroughSnapshot, error) {
+	coveragePath := review.CoveragePath(path)
+	inputs := source.NewSnapshot(path, coveragePath, walkReadyPath(path))
 	rv, err := review.Load(path)
 	if err != nil {
-		return nil, walkthrough{}, err
+		return nil, walkthrough{}, nil, err
 	}
 	files, err := source.Open(rv)
 	if err != nil {
-		return nil, walkthrough{}, err
+		return nil, walkthrough{}, nil, err
 	}
 	defer files.Close()
+	var snapshot *walkthroughSnapshot
+	if files.HasBase() {
+		files.TrackSnapshot(inputs, rv)
+		snapshot = &walkthroughSnapshot{
+			inputs: inputs, preparation: saved.WalkPreparation,
+			views: map[walkMode]*View{}, highlights: map[string][][]render.Span{},
+		}
+	}
 	d, walk, err := buildWalkthrough(rv, files, saved, current, requested)
 	if err != nil {
-		return nil, walkthrough{}, err
+		return nil, walkthrough{}, nil, err
 	}
-	set, err := coverage.Load(review.CoveragePath(rv.Path))
-	if err != nil {
-		d.Problems = append(d.Problems, doc.Problem{Station: "tests", Msg: err.Error()})
+	set, err := coverage.Load(coveragePath)
+	for _, layout := range []*doc.Doc{d, walk.alternate} {
+		if layout == nil {
+			continue
+		}
+		if err != nil {
+			layout.Problems = append(layout.Problems, doc.Problem{Station: "tests", Msg: err.Error()})
+		}
+		layout.AttachCoverage(set)
 	}
-	d.AttachCoverage(set)
-	return d, walk, nil
+	return d, walk, snapshot, nil
 }
 
 func (r *Reviews) Close() { r.setReview("") }
@@ -433,7 +492,7 @@ func (r *Reviews) setReview(path string) {
 	defer r.stateMu.Unlock()
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.path, r.loaded, r.walk = path, nil, walkthrough{}
+	r.path, r.loaded, r.walk, r.walkSnapshot = path, nil, walkthrough{}, nil
 	r.version++
 	if r.watcher != nil {
 		r.watcher.Set(nil)
@@ -477,7 +536,7 @@ func (r *Reviews) ServiceShutdown() error {
 	return nil
 }
 
-func viewOf(d *doc.Doc) *View {
+func viewOf(d *doc.Doc, hl map[string][][]render.Span) *View {
 	rv := d.Review
 	v := &View{Repo: d.Repo, Guidance: d.Guidance, Instructions: rv.Instructions, HasBase: d.HasBase, Path: rv.Path, Title: rv.Title, Kicker: rv.Kicker, Asked: rv.Asked, AskedFrom: rv.AskedFrom,
 		Did: rv.Did, Gap: rv.Gap, Summary: rv.Summary, Motivation: rv.Motivation, Outcome: rv.Outcome,
@@ -501,7 +560,6 @@ func viewOf(d *doc.Doc) *View {
 		}
 		v.Skip = append(v.Skip, line)
 	}
-	hl := map[string][][]render.Span{}
 	for _, st := range d.Stations {
 		v.Stations = append(v.Stations, stationOf(d, st, hl))
 	}
