@@ -636,7 +636,7 @@ button.chip.chip-issue.on { background: var(--issue-tint); border-color: var(--i
 #toolbar { display: flex; align-items: flex-end; gap: 4px; padding: 5px 12px; border-bottom: 1px solid var(--line); background: var(--bg-1); flex: none; flex-wrap: wrap; }
 #toolbar-actions { display: contents; }
 #toolbar button, #note-filter, #toolbar input.search { min-height: 28px; font-family: var(--sans); font-size: 12px; line-height: 18px; }
-#toolbar button { padding: 3px 9px; }
+#toolbar button, #note-filter { padding: 3px 9px; }
 .toolbar-field { display: flex; flex-direction: column; gap: 2px; max-width: 100%; margin-right: 4px; }
 .toolbar-label { padding-left: 2px; font-size: 11px; color: var(--fg-dim); }
 .segments { display: inline-grid; grid-template-columns: 1fr 1fr; gap: 2px; padding: 0 2px; border-radius: 8px; background: var(--bg); }
@@ -645,7 +645,33 @@ button.chip.chip-issue.on { background: var(--issue-tint); border-color: var(--i
 .segments button[aria-pressed="true"] { background: var(--primary-bg); color: var(--on-primary); font-weight: 600; }
 .segments button[aria-disabled="true"] { opacity: .65; cursor: default; }
 .note-filter-field { min-width: 0; max-width: min(100%, 16rem); }
-#note-filter { max-width: 100%; color: var(--fg); background: var(--bg-2); border: 1px solid var(--line); border-radius: 6px; padding: 3px 5px; cursor: pointer; }
+.note-filter-control { position: relative; }
+.note-filter-control::after {
+  content: "";
+  position: absolute;
+  inset-inline-end: 11px;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  border: solid var(--fg-dim);
+  border-width: 0 1px 1px 0;
+  transform: translateY(-70%) rotate(45deg);
+  pointer-events: none;
+}
+#note-filter {
+  -webkit-appearance: none;
+  appearance: none;
+  display: block;
+  width: 100%;
+  padding-inline-end: 27px;
+  color: var(--fg);
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+#note-filter:hover { border-color: var(--fg-faint); }
 .segments button:focus-visible, #note-filter:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 button.tb { background: transparent; color: var(--fg-dim); }
 button.tb.on { color: var(--fg); background: var(--bg-3); border-color: var(--primary-line); }
