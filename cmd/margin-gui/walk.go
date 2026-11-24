@@ -73,9 +73,7 @@ func (r *Reviews) SetBlind(blind bool) (*ReaderUpdate, error) {
 
 // SetNoteVisibility saves the GUI's note-card preference for the open review.
 func (r *Reviews) SetNoteVisibility(path, mode string) (*ReaderUpdate, error) {
-	switch mode {
-	case "risky", "all", "hide":
-	default:
+	if !validNoteVisibility(mode) {
 		return nil, errors.New("unknown note visibility")
 	}
 	r.stateMu.Lock()
@@ -104,8 +102,14 @@ func (r *Reviews) SetNoteVisibility(path, mode string) (*ReaderUpdate, error) {
 	return &update, nil
 }
 
-func (r *Reviews) Reveal(station string) (*ReaderUpdate, error) {
-	return r.change(func(_ *doc.Doc, st *state.State) error {
+func (r *Reviews) Reveal(path, station string) (*ReaderUpdate, error) {
+	return r.change(func(d *doc.Doc, st *state.State) error {
+		if d.Review.Path != path {
+			return errors.New("the open review changed")
+		}
+		if _, stop := d.Station(station); stop == nil || stop.Kind != doc.Code {
+			return errors.New("this stop is no longer in the review")
+		}
 		st.Revealed[station] = true
 		return nil
 	})

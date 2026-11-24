@@ -107,6 +107,7 @@ export function reviewToolbarOverflow(toolbar) {
     clearActions() {
       for (const [item, home] of homes) {
         if (home.parentNode !== actions) continue;
+        if (item.contains(document.activeElement)) more.focus({ preventScroll: true });
         item.remove();
         homes.delete(item);
       }

@@ -55,9 +55,16 @@ type reviewResume struct {
 	NoteVisibility  string                        `json:"note_visibility,omitempty"`
 }
 
-func (saved reviewResume) noteVisibility(blind bool) string {
-	switch saved.NoteVisibility {
+func validNoteVisibility(mode string) bool {
+	switch mode {
 	case "risky", "all", "hide":
+		return true
+	}
+	return false
+}
+
+func (saved reviewResume) noteVisibility(blind bool) string {
+	if validNoteVisibility(saved.NoteVisibility) {
 		return saved.NoteVisibility
 	}
 	if blind {

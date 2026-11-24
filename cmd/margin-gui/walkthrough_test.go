@@ -345,7 +345,13 @@ func TestReviewNoteVisibility(t *testing.T) {
 	if _, err := r.SetNoteVisibility(path, "hide"); err != nil {
 		t.Fatal(err)
 	}
-	update, err := r.Reveal("file:route.txt")
+	if _, err := r.Reveal("another.review.yaml", "file:retired.txt"); err == nil {
+		t.Fatal("revealed a note in the wrong review")
+	}
+	if _, err := r.Reveal(path, "overview"); err == nil {
+		t.Fatal("revealed a non-code stop")
+	}
+	update, err := r.Reveal(path, "file:route.txt")
 	if err != nil || update.Reader.NoteVisibility != "hide" || !slices.Equal(update.Reader.Revealed, []string{"file:route.txt"}) {
 		t.Fatalf("reveal did not stay on one stop: %+v, %v", update, err)
 	}

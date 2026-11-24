@@ -414,19 +414,12 @@ func renderedWalkthrough(d *doc.Doc, walk walkthrough, snapshot *walkthroughSnap
 	}
 	v := viewOf(d, highlights)
 	if walk.mode == fileWalk {
-		highRisk := make(map[string]bool)
-		for _, stop := range walk.alternate.Stations {
-			if stop.Risk == "high" {
-				highRisk[stop.ID] = true
-			}
-		}
 		for i := range v.Stations {
 			for j := range v.Stations[i].Notes {
 				note := &v.Stations[i].Notes[j]
-				note.AuthoredRef = walk.noteRefs[note.Key]
-				if sep := strings.LastIndexByte(note.AuthoredRef, ':'); sep >= 0 {
-					note.HighRisk = highRisk[note.AuthoredRef[:sep]]
-				}
+				projected := walk.projectedNotes[note.Key]
+				note.AuthoredRef = projected.ref
+				note.HighRisk = projected.highRisk
 			}
 		}
 	}

@@ -491,8 +491,7 @@ async function gotoTarget(arg) {
 function gotoNote(si, ni) {
   const s = state.view.stations[si];
   const note = s.notes[ni];
-  if (note.part >= 0 && note.line >= 0 && state.changes !== "all" && !lineVisible(s, note.part, note.line)) {
-    state.changes = "all";
+  if (note.part >= 0 && note.line >= 0 && showDiffAnchor(s, note.part, note.line)) {
     if (si === state.station) rerenderKeepScroll();
   }
   if (si !== state.station) goStation(si);
@@ -579,8 +578,7 @@ async function gotoFileLine(file, line) {
           const s = st[si];
           if (!(await loadPart(s, pi, state.expand[partKey(s, pi)] ?? 0, true))) return;
         }
-        if (state.changes !== "all" && !lineVisible(st[si], pi, line - 1)) {
-          state.changes = "all";
+        if (showDiffAnchor(st[si], pi, line - 1)) {
           renderToolbar();
         }
         jump({ si, pi, line: line - 1 });
@@ -616,7 +614,7 @@ function filters() {
 
 const asks = (n) => ["issue", "question", "decide"].includes(n.kind);
 
-function noteVisible(s, n) {
+function matchesNoteFilter(n) {
   switch (state.filter) {
     case "All notes":
       return true;
@@ -629,7 +627,7 @@ function noteVisible(s, n) {
 }
 
 function noteCardVisible(s, n) {
-  return !cardsHidden(s) && (noteVisibility() !== "risky" || n.highRisk) && noteVisible(s, n);
+  return !cardsHidden(s) && (noteVisibility() !== "risky" || n.highRisk) && matchesNoteFilter(n);
 }
 
 function filteringNotes(s) {
@@ -637,7 +635,7 @@ function filteringNotes(s) {
 }
 
 function stopHasNoMatchingNotes(s) {
-  return filteringNotes(s) && !s.notes.some((n) => noteVisible(s, n));
+  return filteringNotes(s) && !s.notes.some(matchesNoteFilter);
 }
 
 // Header, phases and the stop list
@@ -988,6 +986,15 @@ function diffRowVisible(row) {
 
 function lineVisible(s, pi, line) {
   return diffRowVisible(partData(s, pi)?.rows?.find((row) => row.n === line + 1));
+}
+
+function showDiffAnchor(s, part, first, last = first) {
+  if (state.changes === "all") return false;
+  const rows = partData(s, part)?.rows ?? [];
+  const hidesInterior = last > first && rows.some((row) => row.n > first + 1 && row.n < last + 1 && !diffRowVisible(row));
+  if (lineVisible(s, part, first) && lineVisible(s, part, last) && !hidesInterior) return false;
+  state.changes = "all";
+  return true;
 }
 
 function navigableNote(s, note) {
@@ -1358,7 +1365,7 @@ function stepNote(dir) {
 function selectedNote() {
   const s = cur();
   const n = s?.notes[state.note];
-  return n && noteVisible(s, n) ? n : undefined;
+  return n && matchesNoteFilter(n) ? n : undefined;
 }
 
 function noteMark(mark) {
@@ -1802,7 +1809,7 @@ async function jumpDiscussion(review, id, reply, turnID) {
       const s = view.stations[i];
       const part = s.parts[q.part];
       const last = q.kind === "diff" ? questionLastLine(q) : q.at;
-      if (part && state.changes !== "all" && (!lineVisible(s, q.part, q.at) || !lineVisible(s, q.part, last))) state.changes = "all";
+      if (part) showDiffAnchor(s, q.part, q.at, last);
       const step = guided() && part ? stepOf(s, q.part, last) : 0;
       const before = step < 0 ? stepOf(s, q.part, part.start) : step;
       await goStation(i, -1, Math.max(0, before));
@@ -2182,8 +2189,7 @@ function openComposer(station, part, line, opts = {}) {
   const from = opts.from ?? line, end = opts.end ?? line;
   const anchor = questionSelection(p.viewVersion === state.view.version ? p : s.parts[part], from, end);
   if ((reselect || opts.mode === "ask") && !anchor) return toast("Wait for the selected code to reload, then choose Ask again.");
-  if (state.changes !== "all" && !lineVisible(s, part, line)) {
-    state.changes = "all";
+  if (showDiffAnchor(s, part, from, end)) {
     renderToolbar();
   }
   state.sel = { station, part, line };
@@ -2417,7 +2423,7 @@ function stepNotes(s, st) {
   if (st.kind === "mech") return (st.subs ?? []).flatMap((x) => stepNotes(s, x));
   if (st.from < 0) return [];
   const end = stepEnd(s, st);
-  return s.notes.map((n, i) => [n, i]).filter(([n]) => n.part === st.part && n.line >= st.from && n.line <= end && noteVisible(s, n)).sort(([a], [b]) => a.line - b.line).map(([, i]) => i);
+  return s.notes.map((n, i) => [n, i]).filter(([n]) => n.part === st.part && n.line >= st.from && n.line <= end && matchesNoteFilter(n)).sort(([a], [b]) => a.line - b.line).map(([, i]) => i);
 }
 
 function nextStep() {
@@ -2448,13 +2454,19 @@ function prevStep() {
 function readStep(s, st) {
   if (!st || (st.kind !== "change" && st.kind !== "background" && st.kind !== "mech")) return;
   const rd = reader();
-  const keys = stepNotes(s, st).map((i) => s.notes[i]).filter((n) => n.kind !== "decide" && !rd.reviewed.includes(n.key)).map((n) => n.key);
+  const showsPrompts = st.kind !== "mech";
+  const keys = stepNotes(s, st).map((i) => s.notes[i])
+    .filter((n) => n.kind !== "decide" && !rd.reviewed.includes(n.key) && (navigableNote(s, n) || (showsPrompts && guidedPrompt(n))))
+    .map((n) => n.key);
   if (keys.length) act("ReadNotes", keys);
 }
 
 function enterStep() {
   state.nudged = false;
   state.compose = null;
+  state.sel = null;
+  state.block = null;
+  state.note = -1;
   renderStation();
   $("#station").scrollTop = 0;
   const s = cur();
@@ -2463,6 +2475,9 @@ function enterStep() {
   if (first) {
     selectRow(s.id, +first.dataset.part, +first.dataset.line, false);
     first.scrollIntoView({ block: "nearest" });
+  } else {
+    renderStatus();
+    updateDiscussionControls();
   }
 }
 
@@ -2653,9 +2668,12 @@ function stepQuestion(s, st, notes) {
 
 // settle lists what notes ask of the reader, right where they read them: calls to make, problems to
 // agree with or dismiss, and questions to answer.
+function guidedPrompt(note) {
+  return asks(note) && !reader().dismissed.includes(note.key);
+}
+
 function settle(body, s, notes, heading) {
-  const rd = reader();
-  const items = notes.map((i) => [s.notes[i], i]).filter(([n]) => !rd.dismissed.includes(n.key) && asks(n));
+  const items = notes.map((i) => [s.notes[i], i]).filter(([n]) => guidedPrompt(n));
   if (!items.length) return;
   const box = el(`<div class="settle"><h4>${esc(heading)}</h4></div>`);
   for (const [n, i] of items) box.append(settleRow(s, n, i));
@@ -2715,7 +2733,7 @@ function wrapStep(body, s) {
   body.append(el(`<h2>End of stop: ${esc(s.title)}</h2>`));
   if (cardsHidden(s)) body.append(revealNoteCards());
   body.append(el(`<div class="checks"><h4>You should be able to answer</h4><ul>${(s.checksAll ?? []).map((c) => `<li>${prose(c)}</li>`).join("")}</ul></div>`));
-  const open = s.notes.map((n, i) => [n, i]).filter(([n]) => noteVisible(s, n) && !rd.dismissed.includes(n.key) && (
+  const open = s.notes.map((n, i) => [n, i]).filter(([n]) => matchesNoteFilter(n) && !rd.dismissed.includes(n.key) && (
     (n.kind === "decide" && !rd.reviewed.includes(n.key)) ||
     (n.kind === "issue" && !n.unbacked && !rd.flagged.includes(n.key)) ||
     (n.kind === "question" && !n.q && !rd.comments.some((c) => c.answers === n.key))));
@@ -2829,7 +2847,7 @@ function renderWhole(box, s) {
   if (s.flow) box.append(el(`<pre class="flow">${esc(s.flow)}</pre>`));
   if (s.checksAll?.length) box.append(el(`<div class="checks"><h4>After this stop you should be able to answer</h4><ol>${s.checksAll.map((c) => `<li>${prose(c)}</li>`).join("")}</ol></div>`));
   if (s.examples?.length) box.append(examplesTable(s));
-  const calls = s.notes.map((n, i) => [n, i]).filter(([n]) => n.kind === "decide" && noteVisible(s, n) && !reader().dismissed.includes(n.key));
+  const calls = s.notes.map((n, i) => [n, i]).filter(([n]) => n.kind === "decide" && matchesNoteFilter(n) && !reader().dismissed.includes(n.key));
   if (calls.length) {
     const c = el(`<div class="settle"><h4>Your calls in this stop</h4></div>`);
     for (const [n, i] of calls) c.append(settleRow(s, n, i, n.part >= 0 ? ` (${base(s.parts[n.part].file)}:${n.line + 1})` : ""));
@@ -2951,7 +2969,7 @@ function renderOverview(box) {
     for (const [nn, s, si, ni] of focus) {
       const where = nn.part >= 0 ? `${s.id} · ${base(s.parts[nn.part].file)}:${nn.line + 1}` : s.id;
       const l = el(`<div class="peek-link navable"><span class="k-${esc(noteStyle(nn)[2])}">${esc(nn.focus)}</span> · <span class="muted">${esc(where)}</span> — ${esc(oneLine(nn.text).slice(0, 140))}</div>`);
-      l.onclick = () => goStation(si, ni);
+      l.onclick = () => gotoNote(si, ni);
       f.append(l);
     }
     ov.append(f);
@@ -3056,7 +3074,7 @@ function renderRecap(box) {
   const where = (s, n) => (n.part < 0 ? s.id : `${s.id} · ${base(s.parts[n.part].file)}:${n.line + 1}`);
   const link = (cls, html, si, ni) => {
     const l = el(`<div class="peek-link navable ${cls}">${html}</div>`);
-    l.onclick = () => goStation(si, ni);
+    l.onclick = () => gotoNote(si, ni);
     return l;
   };
   const all = [];
@@ -3668,15 +3686,7 @@ function jump(h) {
     renderKeepScroll();
   }
   const row = target();
-  if (h.ghost) {
-    state.sel = null;
-    state.block = null;
-    state.note = -1;
-    row?.classList.add("kcur");
-    renderStatus();
-  } else if (row) {
-    selectRow(s.id, h.pi, h.line, false);
-  }
+  if (row) placeReviewCursor(row);
   row?.scrollIntoView({ block: "center" });
   row?.querySelector("mark")?.scrollIntoView({ block: "nearest", inline: "center" });
 }
@@ -3738,7 +3748,7 @@ function setNoteFilter(filter) {
 function reveal() {
   const s = cur();
   if (!cardsHidden(s)) return toast("Choose Hide to reveal note cards one stop at a time.");
-  act("Reveal", s.id).then((ok) => ok && toast("Note cards shown on this stop."));
+  act("Reveal", state.view.path, s.id).then((ok) => ok && toast("Note cards shown on this stop."));
 }
 
 function revealNoteCards() {
@@ -3973,7 +3983,7 @@ function jumpToLine(station, file, line, base) {
   if (si < 0) return;
   const s = state.view.stations[si];
   const pi = s.parts.findIndex((p) => p.file === file && !!p.base === base && line - 1 >= p.start && line - 1 <= p.end);
-  if (pi >= 0 && state.changes !== "all" && !lineVisible(s, pi, line - 1)) state.changes = "all";
+  if (pi >= 0) showDiffAnchor(s, pi, line - 1);
   goStation(si, -1, pi >= 0 && guided() ? Math.max(stepOf(s, pi, line - 1), 0) : 0);
   if (pi >= 0) {
     selectRow(s.id, pi, line - 1, false);
@@ -4261,14 +4271,8 @@ function pageMove(dir) {
   const box = $("#station");
   box.scrollTop += (dir * box.clientHeight) / 2;
   const top = box.getBoundingClientRect().top;
-  const first = navItems().find((x) => x.getBoundingClientRect().top >= top + (dir > 0 ? 0 : 0));
-  if (first) {
-    const items = navItems();
-    items.forEach((x) => x.classList.remove("kcur"));
-    releaseDisclosureFocus(first);
-    if (first.dataset.line !== undefined) selectRow(cur().id, +first.dataset.part, +first.dataset.line, false);
-    else first.classList.add("kcur");
-  }
+  const first = navItems().find((x) => x.getBoundingClientRect().top >= top);
+  if (first) placeReviewCursor(first);
 }
 
 export function reviewKey(e) {
@@ -4620,32 +4624,38 @@ function releaseDisclosureFocus(next) {
   if (focused?.matches("#station .review-disclosure > summary") && !next.contains(focused)) focused.blur();
 }
 
+function placeReviewCursor(item, extend) {
+  $$("#station .kcur").forEach((x) => x.classList.remove("kcur"));
+  releaseDisclosureFocus(item);
+  if (item.dataset.line !== undefined) {
+    selectRow(cur().id, +item.dataset.part, +item.dataset.line, false, extend);
+    return;
+  }
+  $$("#station .row.sel").forEach((row) => row.classList.remove("sel"));
+  if (item.hasAttribute("data-ghost")) {
+    state.sel = null;
+    state.block = null;
+    state.note = -1;
+    markBlock();
+  }
+  item.classList.add("kcur");
+  renderStatus();
+}
+
 export function moveCursor(dir, jumpTo, extend) {
   const items = navItems();
   if (!items.length) return;
-  let at = items.findIndex((x) => x.classList.contains("kcur"));
+  const cursor = $("#station .kcur");
+  const anchor = cursor?.hasAttribute("data-ghost") ? cursor.closest(".row") : cursor;
+  let at = items.indexOf(anchor);
   if (at < 0) {
     const s = cur();
     at = items.findIndex((r) => state.sel && r.dataset.line !== undefined && state.sel.station === s.id && +r.dataset.part === state.sel.part && +r.dataset.line === state.sel.line);
   }
   let next = jumpTo === "first" ? 0 : jumpTo === "last" ? items.length - 1 : at < 0 ? (dir > 0 ? 0 : items.length - 1) : Math.max(0, Math.min(items.length - 1, at + dir));
-  $$("#station .kcur").forEach((x) => x.classList.remove("kcur"));
   const it = items[next];
-  releaseDisclosureFocus(it);
-  if (it.dataset.line !== undefined) {
-    selectRow(cur().id, +it.dataset.part, +it.dataset.line, false, extend);
-  } else {
-    $$("#station .row.sel").forEach((r) => r.classList.remove("sel"));
-    if (it.matches(".ghost")) {
-      state.sel = null;
-      state.block = null;
-      state.note = -1;
-      markBlock();
-    }
-    it.classList.add("kcur");
-  }
+  placeReviewCursor(it, extend);
   it.scrollIntoView({ block: "nearest" });
-  renderStatus();
 }
 
 function activate() {

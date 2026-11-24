@@ -36,11 +36,16 @@ type WalkthroughView struct {
 }
 
 type walkthrough struct {
-	mode      walkMode
-	ready     bool
-	legacyIDs map[string]string
-	alternate *doc.Doc
-	noteRefs  map[string]string
+	mode           walkMode
+	ready          bool
+	legacyIDs      map[string]string
+	alternate      *doc.Doc
+	projectedNotes map[string]projectedNote
+}
+
+type projectedNote struct {
+	ref      string
+	highRisk bool
 }
 
 func fileStations(files *source.Files) ([]review.Station, error) {
@@ -207,7 +212,7 @@ func buildWalkthrough(rv *review.Review, files *source.Files, saved reviewResume
 	byFile.Stations = generated
 	byFile.Skip = nil
 	d := doc.Build(&byFile, files)
-	walk.noteRefs = projectWalkNotes(d, agent)
+	walk.projectedNotes = projectWalkNotes(d, agent)
 	if mode == agentWalk {
 		walk.alternate = d
 		return agent, walk, nil
@@ -230,7 +235,7 @@ func walkthroughFocusAreas(d *doc.Doc) []string {
 	return slices.Compact(areas)
 }
 
-func projectWalkNotes(files, authored *doc.Doc) map[string]string {
+func projectWalkNotes(files, authored *doc.Doc) map[string]projectedNote {
 	stops := make(map[string]*doc.Station)
 	baseStops := make(map[string]*doc.Station)
 	for _, stop := range files.Stations {
@@ -241,7 +246,7 @@ func projectWalkNotes(files, authored *doc.Doc) map[string]string {
 			}
 		}
 	}
-	refs := make(map[string]string)
+	notes := make(map[string]projectedNote)
 	for _, stop := range authored.Stations {
 		for i, note := range stop.Notes {
 			if note.Part < 0 || note.Line < 0 || note.Problem != "" {
@@ -259,10 +264,10 @@ func projectWalkNotes(files, authored *doc.Doc) map[string]string {
 			n.Station = target.ID
 			n.Part = partForWalkNote(target, part, note.Line)
 			target.Notes = append(target.Notes, &n)
-			refs[n.Key] = fmt.Sprintf("%s:%d", stop.ID, i+1)
+			notes[n.Key] = projectedNote{ref: fmt.Sprintf("%s:%d", stop.ID, i+1), highRisk: stop.Risk == "high"}
 		}
 	}
-	return refs
+	return notes
 }
 
 func partForWalkNote(stop *doc.Station, source *doc.Part, line int) int {
