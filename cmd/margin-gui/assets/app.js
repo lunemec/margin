@@ -305,7 +305,7 @@ async function pickReviewFile() {
 
 document.addEventListener("keydown", (e) => {
   if (switcherOpen()) return;
-  if (document.activeElement?.closest?.(".cm-editor")) return;
+  const inEditor = document.activeElement?.closest?.(".cm-editor");
   const inTerm = document.activeElement?.closest?.("#terminal");
   const inInput = ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName) && !inTerm;
   if (inTerm) {
@@ -315,7 +315,7 @@ document.addEventListener("keydown", (e) => {
     }
     return;
   }
-  if ((e.ctrlKey || e.metaKey) && (e.key === "k" || e.key === "p")) {
+  if (!inEditor && (e.ctrlKey || e.metaKey) && (e.key === "k" || e.key === "p")) {
     e.preventDefault();
     return openSwitcher();
   }
@@ -323,7 +323,8 @@ document.addEventListener("keydown", (e) => {
     e.preventDefault();
     return openSettings();
   }
-  if (inInput) return;
+  if (inEditor || inInput) return;
+  if ((e.key === "Enter" || e.key === " ") && e.target.closest?.("button, summary")) return;
   if (!e.ctrlKey && !e.metaKey && !e.altKey) {
     if (e.key === "\\") {
       e.preventDefault();

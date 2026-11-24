@@ -69,8 +69,14 @@ func resumePath(path string) string {
 }
 
 func resumeIdentity(path string) string {
-	if resolved, err := filepath.EvalSymlinks(path); err == nil {
+	resolved, err := filepath.EvalSymlinks(path)
+	if err == nil {
 		return resolved
+	}
+	// Keep the lease key stable as missing review directories and the file are created.
+	parent := filepath.Dir(path)
+	if parent != path && errors.Is(err, os.ErrNotExist) {
+		return filepath.Join(resumeIdentity(parent), filepath.Base(path))
 	}
 	return filepath.Clean(path)
 }

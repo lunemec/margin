@@ -1,5 +1,6 @@
 import { api, $, $$, state, hooks, esc, el, toast, errText, tail, plural, fuzzy, openModal, closeModal, applyTheme, setThemeMode } from "./core.js";
-import { openReview, openReviewFile, openDiscussionAnswers } from "./review.js";
+import { openReview, openReviewFile, openDiscussionAnswers, renderKeepScroll } from "./review.js";
+import { editorMode, setEditorMode } from "./editor-mode.js";
 
 // The sidebar lists repositories and reviews. The picker lists what there is to review in a worktree.
 
@@ -540,6 +541,12 @@ export async function openSettings() {
         .join("")}</div>
       <p class="muted small">System follows the desktop's light or dark setting.</p>
     </section>
+    <section><h4 id="editor-keybindings-label">Editor keybindings</h4>
+      <div role="group" aria-labelledby="editor-keybindings-label">
+        <label class="opt"><input type="radio" name="editor-mode" value="standard"${editorMode() === "standard" ? " checked" : ""}><span>Standard</span></label>
+        <label class="opt"><input type="radio" name="editor-mode" value="vim"${editorMode() === "vim" ? " checked" : ""}><span>Vim</span></label>
+      </div>
+    </section>
     <section><h4>Where reviews are kept</h4>
       <label class="opt"><input type="radio" name="where" value="repo"${where === "repo" ? " checked" : ""}><span><b>In the repository</b> · <code>.margin/reviews/</code>, which git ignores. Every worktree of the repository shares it.</span></label>
       <label class="opt"><input type="radio" name="where" value="state"${where === "state" ? " checked" : ""}><span><b>A private folder</b> · <code>~/.local/state/margin</code>, outside every repository.</span></label>
@@ -616,9 +623,11 @@ export async function openSettings() {
     applyTheme(r.value);
   }));
   body.querySelector('[data-act="cancel"]').onclick = closeModal;
-  body.querySelector('[data-act="save"]').onclick = async () => {
+  const save = body.querySelector('[data-act="save"]');
+  save.onclick = async () => {
     const w = body.querySelector('input[name="where"]:checked').value;
     const a = body.querySelector('input[name="agent"]:checked')?.value;
+    const mode = body.querySelector('input[name="editor-mode"]:checked').value;
     const cfg = {
       reviews: w === "dir" ? body.querySelector("#set-dir").value.trim() : w === "repo" ? "" : "state",
       agent: a ? (a === "claude" ? "" : a) : body.querySelector("#set-agent").value.trim(),
@@ -626,19 +635,34 @@ export async function openSettings() {
       tests,
       theme: body.querySelector('input[name="theme"]:checked').value,
     };
+    save.disabled = true;
     try {
       await api("Settings.Save", cfg);
+      if (!m.isConnected) return;
       await setThemeMode(cfg.theme);
+      if (!m.isConnected) return;
+      const changed = mode !== editorMode();
+      const persisted = !changed || setEditorMode(mode);
       closeModal();
-      toast("Settings saved. New reviews and agents use them; open reviews stay where they are.");
+      if (changed && state.trying) renderKeepScroll();
+      toast(persisted ? "Settings saved. New reviews and agents use them; open reviews stay where they are." : "Settings saved. The editor keybindings apply now, but could not be remembered for next launch.");
       if (state.worktree) loadTargets();
     } catch (e) {
-      toast(errText(e), true);
+      if (m.isConnected) toast(errText(e), true);
+    } finally {
+      save.disabled = false;
     }
   };
   const m = openModal("Settings", body, "narrow");
   m.onclosed = () => applyTheme();
-  m.onkey = (e) => (e.key === "Escape" ? (closeModal(), true) : true);
+  m.addEventListener("keydown", (e) => {
+    e.stopPropagation();
+    if (e.key === "Escape") {
+      e.preventDefault();
+      closeModal();
+    }
+  });
+  m.querySelector("button").focus();
 }
 
 // Welcome, when the workspace is empty

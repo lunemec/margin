@@ -2,6 +2,7 @@ import { Events, Clipboard } from "/wails/runtime.js";
 import { api, $, $$, state, hooks, esc, prose, md, oneLine, el, toast, errText, tail, plural, shortList, base, openModal, closeModal } from "./core.js";
 import { openAnswers, hasAnswerDraft } from "./answers.js";
 import { agentReply, discussionThreads, localResolution, nextThread, questionReply, questionSelection, questionTurns, readReply, setLocalResolution, unreadReply } from "./discussions.js";
+import { editorMode, setEditorMode } from "./editor-mode.js";
 import { runTests, tryChange, toggleTestPanel, resetTests, statusOf, statusIcon, testHooks, results } from "./tests.js";
 
 export { closeModal };
@@ -1040,35 +1041,44 @@ function partBox(s, pi, from, to, title, opts = {}) {
 
 async function widen(s, pi, dir) {
   const view = state.view;
-  const k = partKey(s, pi);
-  if (state.whole[k]) return toast("Return to the change to adjust its context.");
   try {
     const step = await stepSize();
     if (state.view !== view || cur() !== s) return;
-    const extra = Math.max(0, (state.expand[k] ?? 0) + dir * step);
-    if (extra !== (state.expand[k] ?? 0)) await loadPart(s, pi, extra, false);
+    const { extra, whole } = requestedPart(s, pi);
+    if (whole) return toast("Return to the change to adjust its context.");
+    const next = Math.max(0, extra + dir * step);
+    if (next !== extra) await loadPart(s, pi, next, false);
   } catch (e) {
     if (state.view === view) toast(errText(e), true);
   }
 }
 
 function wholeFile(s, pi) {
-  const k = partKey(s, pi);
-  return loadPart(s, pi, state.expand[k] ?? 0, !state.whole[k]);
+  const { extra, whole } = requestedPart(s, pi);
+  return loadPart(s, pi, extra, !whole);
 }
 
-let expandStep = 0;
-async function stepSize() {
-  if (!expandStep) expandStep = await api("Reviews.ExpandStep");
+let expandStep;
+function stepSize() {
+  expandStep ??= api("Reviews.ExpandStep").catch((e) => {
+    expandStep = undefined;
+    throw e;
+  });
   return expandStep;
 }
 
 const partLoads = new Map();
+function requestedPart(s, pi) {
+  const k = partKey(s, pi);
+  const pending = partLoads.get(k);
+  return pending?.view === state.view ? pending : { extra: state.expand[k] ?? 0, whole: !!state.whole[k] };
+}
+
 async function loadPart(s, pi, extra, whole, refresh = false) {
   const view = state.view;
   const k = partKey(s, pi);
   if (refresh && partLoads.get(k)?.view === view) return false;
-  const request = { view };
+  const request = { view, extra, whole };
   partLoads.set(k, request);
   try {
     const part = extra || whole ? await api("Reviews.Lines", s.id, pi, extra, whole, view.version) : null;
@@ -3318,15 +3328,8 @@ testHooks.edit = (req) => {
   startTry(req);
 };
 
-// The inline editor: CodeMirror with vim keys, loaded the first time a change is tried.
+// Load CodeMirror the first time a change is tried.
 let cmLib = null;
-const vimOn = () => {
-  try {
-    return localStorage.getItem("margin.vim") !== "off";
-  } catch {
-    return true;
-  }
-};
 
 export function endTry() {
   state.trying?.ed?.destroy();
@@ -3337,6 +3340,8 @@ function tryBox(s, p) {
   const tr = state.trying;
   const covered = tr.lineTests.length;
   const many = tr.end > tr.line;
+  const vimOn = editorMode() === "vim";
+  const runShortcut = "⌘/Ctrl+Enter";
   const box = el(`<div class="try-inline">
     <div class="try-bar">✎ <code>${esc(base(p.file))}:${tr.line + 1}${many ? "–" + (tr.end + 1) : ""}</code>
       <button class="na" data-grow="-1" title="Take the line above in too">+ above</button><button class="na" data-grow="1" title="Take the line below in too">+ below</button>
@@ -3345,10 +3350,10 @@ function tryBox(s, p) {
       <label class="opt"><input type="radio" name="try-scope" value="line"${tr.scope === "line" ? " checked" : ""}${covered ? "" : " disabled"}> ${covered ? plural(covered, "test", "tests") + " of these lines" : "no test runs these lines"}</label>
       <label class="opt"><input type="radio" name="try-scope" value="stop"${tr.scope === "stop" ? " checked" : ""}> the stop's tests</label>
       <label class="opt" title="Run them on the code as it is first, to compare"><input type="checkbox" data-compare${tr.compare ? " checked" : ""}> compare</label>
-      <label class="opt" title="Vim keys in the editor"><input type="checkbox" data-vim${vimOn() ? " checked" : ""}> vim</label>
-      <span class="spacer"></span><button class="small" data-cancel>Cancel</button><button class="primary small" data-go title="Ctrl+Enter, or :w in vim">▶ Run</button></div>
+      <label class="opt" title="Vim keys in the editor"><input type="checkbox" data-vim${vimOn ? " checked" : ""}> Vim</label>
+      <span class="spacer"></span><button class="small" data-cancel>Cancel</button><button class="primary small" data-go title="${runShortcut}${vimOn ? " or :w" : ""}">▶ Run</button></div>
     <div class="try-host"></div>
-    <div class="try-help muted small">${vimOn() ? "<kbd>i</kbd> insert · <kbd>esc</kbd> normal · <kbd>:w</kbd> runs · <kbd>:q</kbd> cancels · " : ""}<kbd>ctrl+enter</kbd> runs · margin writes this into the file for the run, then puts the lines back · empty deletes them</div></div>`);
+    <div class="try-help muted small">${vimOn ? "<kbd>i</kbd> insert · <kbd>Esc</kbd> normal · <kbd>:w</kbd> runs · <kbd>:q</kbd> cancels · " : "<kbd>Esc</kbd> cancels · "}<kbd>${runShortcut}</kbd> runs · margin writes this into the file for the run, then puts the lines back · empty deletes them</div></div>`);
   const host = box.querySelector(".try-host");
   const cancel = () => {
     endTry();
@@ -3357,25 +3362,30 @@ function tryBox(s, p) {
   const go = async () => {
     if (tr.text === tr.old) return toast("Change something first.");
     if (state.view !== tr.view) return toast("The review changed. Reopen the editor before running.");
-    let tests = [];
+    const active = () => state.trying === tr;
+    const req = { station: tr.station, part: tr.part, line: tr.line, end: tr.end, old: tr.old, text: tr.text, tests: [], compare: tr.compare };
     if (tr.scope === "stop") {
       try {
-        tests = await api("Reviews.TestsFor", s.id, -1, tr.view.version);
+        req.tests = await api("Reviews.TestsFor", s.id, -1, tr.view.version);
       } catch (e) {
-        return toast(errText(e), true);
+        if (active()) toast(errText(e), true);
+        return;
       }
-      if (!tests.length) return toast("No test runs this stop's changes.");
+      if (!active()) return;
+      if (!req.tests.length) return toast("No test runs this stop's changes.");
     }
-    const req = { station: tr.station, part: tr.part, line: tr.line, end: tr.end, old: tr.old, text: tr.text, tests, compare: tr.compare };
-    if (await tryChange(req, `${base(p.file)}:${tr.line + 1}${many ? "–" + (tr.end + 1) : ""}`, tr.view) && state.trying === tr) cancel();
+    const label = `${base(p.file)}:${req.line + 1}${req.end > req.line ? "–" + (req.end + 1) : ""}`;
+    if (await tryChange(req, label, tr.view, active) && active() && tr.text === req.text && tr.line === req.line && tr.end === req.end) {
+      cancel();
+    }
   };
   tr.go = go;
   tr.cancel = cancel;
   const mount = (lib) => {
     if (state.trying !== tr) return;
-    if (!tr.ed || tr.edVim !== vimOn()) {
+    if (!tr.ed || tr.edVim !== vimOn) {
       tr.ed?.destroy();
-      tr.edVim = vimOn();
+      tr.edVim = vimOn;
       tr.ed = lib.createEditor(document.createElement("div"), {
         doc: tr.text,
         file: p.file,
@@ -3397,7 +3407,7 @@ function tryBox(s, p) {
   else
     import("./vendor/codemirror.js").then((lib) => {
       cmLib = lib;
-      mount(lib);
+      if (host.isConnected) mount(lib);
     }, (e) => toast("The editor did not load: " + errText(e), true));
   box.querySelectorAll("[data-grow]").forEach((b) => (b.onclick = () => growTry(+b.dataset.grow)));
   box.querySelector("[data-del]").onclick = () => {
@@ -3408,9 +3418,9 @@ function tryBox(s, p) {
   box.querySelectorAll('input[name="try-scope"]').forEach((x) => (x.onchange = () => (tr.scope = x.value)));
   box.querySelector("[data-compare]").onchange = (e) => (tr.compare = e.target.checked);
   box.querySelector("[data-vim]").onchange = (e) => {
-    try {
-      localStorage.setItem("margin.vim", e.target.checked ? "on" : "off");
-    } catch {}
+    if (!setEditorMode(e.target.checked ? "vim" : "standard")) {
+      toast("Editor keybindings changed for this session. Margin could not remember them for next launch.");
+    }
     tr.focused = true;
     renderKeepScroll();
   };
@@ -4084,9 +4094,6 @@ export function reviewKey(e) {
   if (!state.view || state.opened?.switchingWalkthrough) return false;
   const k = e.key;
   const s = cur();
-  if ((k === "Enter" || k === " ") && e.target.closest?.("button, summary")?.closest(
-    "#walkthrough, #reading-mode, .discussion-nav, .jump-reply, .question-thread-actions, .diff-questions-list, .answers, .review-disclosure, .note-actions",
-  )) return false;
   if (k === "Tab") return false;
   if (document.querySelector(".modal-back")) return modalKey(e);
   const ov = s.kind === "overview" && guided();

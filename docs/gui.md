@@ -225,10 +225,11 @@ checked out there, they run against whatever is.
 ## Trying a change
 
 When a note claims a line matters, or a line looks wrong to you, check whether the tests would
-notice. Click the line and then *✎ Try a change* in the bar under it, or press `i`: the line turns
-into an editor right where it stands, with the file's colours and line numbers, and vim keys (`i`
-to insert, `esc` back to normal, `cw`, `dd`, `u`, visual mode and the rest). `:w` or `Ctrl+Enter`
-runs, `:q` cancels; untick *vim* in the editor's bar for plain editing, where `Esc` cancels.
+notice. Click the line and then *✎ Try a change* in the bar under it, or press `i` to open an editor
+with the file's colours and line numbers. In Standard mode, type to edit, press `Cmd+Enter` on macOS
+or `Ctrl+Enter` elsewhere to run, and press `Esc` to cancel. You can also click *Run* or *Cancel*.
+Enable *Vim* in the editor's bar or in Settings to use Vim keys. In Vim mode, `i` enters insert mode,
+`:w` runs, and `:q` cancels. The GUI remembers the mode you choose.
 
 For a block, shift+click its last line (or `J` `K` from the first), or use *✎ try a change* on a
 part's header to take every changed line of it. *+ above* and *+ below* take more lines in, and
@@ -295,8 +296,8 @@ fix requests are not posted; *Export* still gives everything as text to paste yo
 
 ## Settings
 
-The gear in the sidebar (or **ctrl+,**) opens the settings. margin-gui and margin-tui share them,
-in `~/.config/margin/config.yaml`.
+The gear in the sidebar (or **ctrl+,**) opens the settings. margin-gui remembers its Editor
+keybindings locally. Both apps read the shared settings file at `~/.config/margin/config.yaml`.
 
 - **Where reviews are kept.** *In the repository* (the default) keeps them in `.margin/reviews/`,
   which ignores itself in git and is shared by all worktrees of the repository. *A private folder*
@@ -313,6 +314,8 @@ in `~/.config/margin/config.yaml`.
 - **Appearance.** *System* (the default) follows the desktop's light or dark setting and switches
   along with it; *Light* and *Dark* stay put. Light uses a Catppuccin Latte palette for the GUI,
   including the review, try editor and agent terminal.
+- **Editor keybindings.** Standard is the default. Choose Vim to use Vim motions and commands in
+  *Try a change*. Save applies the mode to an open editor and remembers it for later launches.
 - **Agent skill.** Installs margin's skill for Claude Code or Codex, so an agent you start yourself
   knows margin too and can run a margin review when you ask for one.
 
@@ -350,15 +353,15 @@ What differs is how you get around:
   pane beside the review; `margin-tui split` and the tmux layouts have no counterpart here.
 - **Settings and export.** margin-gui has a settings window (`ctrl+,`) and an export window.
   margin-tui has `margin-tui config` and `margin-tui export`; they write the same settings file and
-  the same Markdown.
+  the same Markdown. Editor keybindings apply to margin-gui.
 - **Light or dark.** margin-gui follows the desktop, or the theme picked in its settings. margin-tui
   follows the terminal: it asks for the background colour at start and matches it.
 - **Clicks and keys.** Every key in margin-gui also has a button. In margin-tui clicks only choose
   where you are (a line, a block, a link, a note, a stop); every action is a key.
 - **Layout.** margin-gui always shows the list of stops (margin-tui: `tab`) and shows notes in full
   under their line (margin-tui: a column beside the code).
-- **Trying a change.** Both edit in place with vim keys. In margin-gui the options are in the editor's
-  bar, and the vim keys can be switched off. In margin-tui they are commands: `:w!` runs the stop's
+- **Trying a change.** margin-gui edits in place with Standard or Vim keybindings and puts the run
+  options in the editor's bar. margin-tui uses Vim keys. `:w!` runs the stop's
   tests, `:w nocompare` skips the run without your edit, and `:above` and `:below` take more lines
   in. margin-tui can also send the lines to `$EDITOR` with `E`.
 - **Answers to your comments.** margin-gui shows the note formatted, with a reply box under each
@@ -377,9 +380,10 @@ go build -tags gtk3 -o margin-gui ./cmd/margin-gui   # WebKitGTK 4.1
 
 The window is plain HTML, CSS and JavaScript in [`cmd/margin-gui/assets`](../cmd/margin-gui/assets),
 embedded in the binary, with [xterm.js](https://xtermjs.org) for the agent's terminal and
-[CodeMirror](https://codemirror.net) with its vim mode for trying a change. Both are checked in, so
-building needs no npm. To rebuild the editor bundle, run `npm ci && npm run build` in
-[`cmd/margin-gui/codemirror`](../cmd/margin-gui/codemirror). The Go side is a few [Wails v3](https://v3.wails.io) services over margin's own
+[CodeMirror](https://codemirror.net) with optional Vim keybindings for trying a change. Both are
+checked in, so building needs no npm. To rebuild the editor bundle, run `npm install && npm run build`
+in [`cmd/margin-gui/codemirror`](../cmd/margin-gui/codemirror). `npm test` checks GUI preferences and
+discussion navigation. The Go side is a few [Wails v3](https://v3.wails.io) services over margin's own
 packages, so the review logic is the same code margin-tui runs.
 
 `docs/screenshots/shoot-gui.sh` regenerates the window's screenshots on the project page. It runs
