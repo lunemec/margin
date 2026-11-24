@@ -6,11 +6,16 @@ import { loadWorkspace, loadRecent, renderSide, addFolder, selectWorktree, homeK
 // Agent terminal
 
 const termThemes = {
-  dark: { background: "#0a0d12", foreground: "#d7dde4", cursor: "#7aa2f7", selectionBackground: "#264f78" },
+  // Railscasts (base16 ANSI mapping).
+  dark: {
+    background: "#111111", foreground: "#e6e1dc", cursor: "#ffffff", cursorAccent: "#000000", selectionBackground: "#5a647e",
+    black: "#2b2b2b", red: "#da4939", green: "#a5c261", yellow: "#ffc66d", blue: "#6d9cbe", magenta: "#b6b3eb", cyan: "#519f50", white: "#e6e1dc",
+    brightBlack: "#5a647e", brightRed: "#da4939", brightGreen: "#a5c261", brightYellow: "#ffc66d", brightBlue: "#6d9cbe", brightMagenta: "#b6b3eb", brightCyan: "#519f50", brightWhite: "#f9f7f3",
+  },
   light: {
-    background: "#ffffff", foreground: "#1f2328", cursor: "#0969da", cursorAccent: "#ffffff", selectionBackground: "#b6d7ff",
-    black: "#24292f", red: "#cf222e", green: "#116329", yellow: "#4d2d00", blue: "#0969da", magenta: "#8250df", cyan: "#1b7c83", white: "#6e7781",
-    brightBlack: "#57606a", brightRed: "#a40e26", brightGreen: "#1a7f37", brightYellow: "#633c01", brightBlue: "#218bff", brightMagenta: "#a475f9", brightCyan: "#3192aa", brightWhite: "#8c959f",
+    background: "#eff1f5", foreground: "#4c4f69", cursor: "#1857ce", cursorAccent: "#eff1f5", selectionBackground: "#bccbeb",
+    black: "#515469", red: "#a40b2c", green: "#2b6b1c", yellow: "#734809", blue: "#1857ce", magenta: "#6927c3", cyan: "#0e5a60", white: "#4c4f69",
+    brightBlack: "#5c5f77", brightRed: "#a40b2c", brightGreen: "#2b6b1c", brightYellow: "#734809", brightBlue: "#1857ce", brightMagenta: "#6927c3", brightCyan: "#0e5a60", brightWhite: "#4c4f69",
   },
 };
 

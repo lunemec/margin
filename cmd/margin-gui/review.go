@@ -39,6 +39,7 @@ type Reviews struct {
 	ctl            ctlServer
 	tests          testRuns
 	questions      questionQueue
+	gh             ghCache
 	// recovered lists files put back on start, from a run margin did not live to undo.
 	recovered  []string
 	recoverErr string
@@ -201,11 +202,13 @@ type Row struct {
 }
 
 type Span struct {
-	Text   string `json:"t"`
-	Color  string `json:"c,omitempty"`
-	Light  string `json:"l,omitempty"`
-	Bold   bool   `json:"b,omitempty"`
-	Italic bool   `json:"i,omitempty"`
+	Text        string `json:"t"`
+	Color       string `json:"c,omitempty"`
+	Light       string `json:"l,omitempty"`
+	Bold        bool   `json:"b,omitempty"`
+	Italic      bool   `json:"i,omitempty"`
+	LightBold   bool   `json:"lb,omitempty"`
+	LightItalic bool   `json:"li,omitempty"`
 }
 
 type NoteView struct {
@@ -223,6 +226,8 @@ type NoteView struct {
 	At         string `json:"at"`
 	Problem    string `json:"problem,omitempty"`
 	Changed    string `json:"changed,omitempty"`
+	// RefBy lists the notes that mention this one, as stop:n.
+	RefBy []string `json:"refBy,omitempty"`
 }
 
 var stationKinds = map[doc.StationKind]string{doc.Overview: "overview", doc.Code: "code", doc.Recap: "recap", doc.Tests: "tests"}
@@ -500,7 +505,7 @@ func stationOf(d *doc.Doc, st *doc.Station, hl map[string][][]render.Span) Stati
 	}
 	for _, n := range st.Notes {
 		sv.Notes = append(sv.Notes, NoteView{Key: n.Key, Kind: n.Level(), Text: n.Text, Evidence: n.Evidence, Q: n.Q, QID: n.QID, Focus: n.Focus,
-			Confidence: n.Confidence, Unbacked: n.Unbacked(), Part: n.Part, Line: n.Line, At: n.At, Problem: n.Problem, Changed: n.Changed})
+			Confidence: n.Confidence, Unbacked: n.Unbacked(), Part: n.Part, Line: n.Line, At: n.At, Problem: n.Problem, Changed: n.Changed, RefBy: n.RefBy})
 	}
 	return sv
 }
@@ -544,7 +549,7 @@ func partOf(d *doc.Doc, p *doc.Part, rng anchor.Range, extra int, byLine map[str
 			row.Cov = "idle"
 		}
 		for _, s := range spans[i] {
-			row.Spans = append(row.Spans, Span{Text: s.Text, Color: s.Color, Light: s.Light, Bold: s.Bold, Italic: s.Italic})
+			row.Spans = append(row.Spans, spanOf(s))
 		}
 		pv.Rows = append(pv.Rows, row)
 	}

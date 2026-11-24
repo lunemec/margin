@@ -141,6 +141,10 @@ through agent replies, including replies to comments. New replies are marked on 
 stops until you open them. **Back to reading** returns to your original position after any number
 of jumps.
 
+A note that mentions another as `stop:n` (`resolve:2`: the second note of stop *resolve*, the address
+`margin goto` takes) shows it as a link: click it, or press `L` on the selected note, to jump there,
+and `ctrl+o` to come back. The note it points at lists it under *Referenced by*.
+
 ## The agent
 
 *Start agent* runs the agent from [Settings](#settings) in a terminal under the review, in the
@@ -247,6 +251,36 @@ When you send your comments, the agent answers each one in a markdown note besid
 
 The panel updates while the agent writes, unless you are editing or replying.
 
+## Posting to GitHub
+
+When the review belongs to a GitHub pull request, margin-gui can post your own comments to it
+through `gh`, logged in as you. It finds the pull request from a `--pr` review, from the reviewed
+commit, or from the branch checked out. Nothing is posted without a confirmation that shows the pull
+request, the line each comment lands on and the exact text; the agent has no command that posts.
+
+- **Comment on GitHub** on one of your comments posts that comment at once, after you confirm it.
+- **Add to GitHub review** picks a comment for one review sent at the end. *GitHub review* in the top
+  bar, or *Send review to GitHub* in the recap, shows the picked comments, a summary to write and the
+  decision: comment, approve or request changes. margin suggests the decision from your verdicts;
+  approve and request changes are off on your own pull request, since GitHub refuses them.
+
+GitHub only takes inline comments on lines its diff shows. Comments are matched to the pull
+request's lines by their text, so local edits that moved a line do not misplace them. A comment
+outside the diff goes on its file (one comment) or into the review text with its line (a review).
+A posted comment is marked *on GitHub* and links to it; it can no longer be reworded. Its card
+shows the reactions and replies it got on GitHub.
+
+Everyone else's review threads come into the review too. Each one is drawn on its line, found by
+the line's text in the pull request's diff, with its replies and reactions; resolved threads are
+folded until you click their header. *Resolve on GitHub* (or *Unresolve*) appears on any thread
+GitHub lets you change. *GitHub · N open* in the toolbar opens a panel with every thread: those on
+lines the review shows (with *Go to line*), those on lines it does not show or that GitHub marks
+outdated, the resolved ones, and the pull request's conversation and review texts.
+
+margin pulls all of it when the review opens and when the window gets focus again (at most every
+30 seconds). **↻** in the toolbar pulls again at once, reading the pull request's diff afresh too. Agent notes and
+fix requests are not posted; *Export* still gives everything as text to paste yourself.
+
 ## Settings
 
 The gear in the sidebar (or **ctrl+,**) opens the settings. margin-gui and margin-tui share them,
@@ -265,7 +299,8 @@ in `~/.config/margin/config.yaml`.
 - **Note for the agent.** A line added to the agent's instructions, with `{project}`, `{topic}` and
   `{dir}` filled in, for example "File the review in the index of {project}."
 - **Appearance.** *System* (the default) follows the desktop's light or dark setting and switches
-  along with it; *Light* and *Dark* stay put. Code, the try editor and the agent terminal follow too.
+  along with it; *Light* and *Dark* stay put. Light uses a Catppuccin Latte palette for the GUI,
+  including the review, try editor and agent terminal.
 - **Agent skill.** Installs margin's skill for Claude Code or Codex, so an agent you start yourself
   knows margin too and can run a margin review when you ask for one.
 

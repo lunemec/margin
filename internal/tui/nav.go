@@ -1426,3 +1426,77 @@ func (m *Model) control(msg CtlMsg) (cmd teaCmd) {
 	}
 	return nil
 }
+
+// jump is where the reader was when they followed a mention of another note.
+type jump struct {
+	station        string
+	step, cur, top int
+	note           int
+}
+
+// followRef goes to note ni of stop si, remembering where the reader was so ctrl+o comes back.
+func (m *Model) followRef(si, ni int) {
+	if m.doc == nil || si < 0 || si >= len(m.doc.Stations) || ni < 0 || ni >= len(m.doc.Stations[si].Notes) {
+		return
+	}
+	m.jumps = append(m.jumps, jump{station: m.doc.Stations[m.station].ID, step: m.step, cur: m.cur, top: m.top, note: m.note})
+	if len(m.jumps) > 50 {
+		m.jumps = m.jumps[1:]
+	}
+	if si != m.station {
+		m.setStation(si)
+	}
+	m.gotoNote(ni)
+	m.setStatus(false, "%s:%d · ctrl+o goes back", m.doc.Stations[si].ID, ni+1)
+}
+
+// followSelectedRef follows the mentions in the selected note's words in turn, one per press.
+func (m *Model) followSelectedRef() {
+	n := m.selectedNote()
+	if n == nil {
+		m.setStatus(true, "no note selected: ] steps to the next one")
+		return
+	}
+	var refs []doc.Ref
+	for _, r := range append(m.doc.Refs(n.Text), m.doc.Refs(n.Evidence)...) {
+		if r.Note >= 0 {
+			refs = append(refs, r)
+		}
+	}
+	if len(refs) == 0 {
+		m.setStatus(true, "this note mentions no other note")
+		return
+	}
+	if m.refTurn.key != n.Key {
+		m.refTurn.key, m.refTurn.i = n.Key, 0
+	}
+	r := refs[m.refTurn.i%len(refs)]
+	m.refTurn.i++
+	m.followRef(r.Station, r.Note)
+}
+
+// jumpBack returns to where the reader followed the last mention from.
+func (m *Model) jumpBack() {
+	if len(m.jumps) == 0 {
+		m.setStatus(true, "no jump to go back from")
+		return
+	}
+	j := m.jumps[len(m.jumps)-1]
+	m.jumps = m.jumps[:len(m.jumps)-1]
+	si, st := m.doc.Station(j.station)
+	if st == nil {
+		return
+	}
+	if si != m.station {
+		m.setStation(si)
+	}
+	if j.note >= 0 && j.note < len(st.Notes) {
+		m.gotoNote(j.note)
+	}
+	if m.step == j.step && j.cur < len(m.rows) {
+		m.cur, m.top = j.cur, j.top
+		m.clamp()
+	}
+	m.note = j.note
+	m.setStatus(false, "")
+}

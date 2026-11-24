@@ -76,6 +76,9 @@ func (w *Watcher) loop() {
 			if !ok {
 				return
 			}
+			if ev.Op&(fsnotify.Create|fsnotify.Write|fsnotify.Remove|fsnotify.Rename) == 0 {
+				continue
+			}
 			w.mu.Lock()
 			path := filepath.Clean(ev.Name)
 			if w.files[path] {

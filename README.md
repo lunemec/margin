@@ -130,7 +130,8 @@ writes are its own. The exceptions are yours to trigger: margin-gui's *Fetch and
 request runs `git fetch origin pull/N/head`; running tests runs only the test command you set up in
 your own settings, never one from the repository; and trying a change writes your edit of a line
 into the file while its tests run, then puts the line back. `--pr` and the pull request list read
-through `gh` and never post. Terminal
+through `gh`; margin-gui posts your own comments to a pull request only when you click to and confirm
+what goes out, and the agent has no way to post. Terminal
 escape sequences and bidi controls are stripped before anything is shown. Commit messages, pull
 request descriptions and `.margin/instructions` reach the agent marked as written by others. What
 the agent does is up to the agent and its permissions; that includes running your tests for

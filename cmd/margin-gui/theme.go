@@ -29,7 +29,7 @@ func watchTheme(app *application.App) {
 
 func windowBackground(dark bool) application.RGBA {
 	if dark {
-		return application.NewRGB(13, 17, 23)
+		return application.NewRGB(20, 20, 20) // railscasts #141414, matches --bg
 	}
 	return application.NewRGB(255, 255, 255)
 }

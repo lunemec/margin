@@ -52,9 +52,9 @@
 <text x="16.0" y="426" textLength="182.4" lengthAdjust="spacingAndGlyphs" fill="#d29922">  ○ 3  not sure yet</text>
 <text x="947.2" y="426" textLength="9.6" lengthAdjust="spacingAndGlyphs" fill="#161b22">│</text>
 <text x="947.2" y="447" textLength="9.6" lengthAdjust="spacingAndGlyphs" fill="#161b22">│</text>
-<text x="16.0" y="468" textLength="912.0" lengthAdjust="spacingAndGlyphs" fill="#c9d1d9"> Say what needs to change: b goes back to the code, c comments on a line. S sends your comments</text>
+<text x="16.0" y="468" textLength="892.8" lengthAdjust="spacingAndGlyphs" fill="#c9d1d9"> Say what needs to change: b goes back to the code, c comments on a line. P asks the agent to</text>
 <text x="947.2" y="468" textLength="9.6" lengthAdjust="spacingAndGlyphs" fill="#161b22">│</text>
-<text x="16.0" y="489" textLength="336.0" lengthAdjust="spacingAndGlyphs" fill="#c9d1d9"> to the agent. Then space moves on.</text>
+<text x="16.0" y="489" textLength="816.0" lengthAdjust="spacingAndGlyphs" fill="#c9d1d9"> make the changes, with your comments on this stop as the brief. Then space moves on.</text>
 <text x="947.2" y="489" textLength="9.6" lengthAdjust="spacingAndGlyphs" fill="#161b22">│</text>
 <text x="947.2" y="510" textLength="9.6" lengthAdjust="spacingAndGlyphs" fill="#161b22">│</text>
 <text x="947.2" y="531" textLength="9.6" lengthAdjust="spacingAndGlyphs" fill="#161b22">│</text>
@@ -72,12 +72,14 @@
 <rect x="169.6" y="705" width="48.0" height="21" fill="#d29922"/>
 <rect x="217.6" y="705" width="9.6" height="21" fill="#161b22"/>
 <rect x="227.2" y="705" width="67.2" height="21" fill="#d2a8ff"/>
-<rect x="294.4" y="705" width="1152.0" height="21" fill="#161b22"/>
+<rect x="294.4" y="705" width="9.6" height="21" fill="#161b22"/>
+<rect x="304.0" y="705" width="211.2" height="21" fill="#ff7b71"/>
+<rect x="515.2" y="705" width="931.2" height="21" fill="#161b22"/>
 <text x="25.6" y="720" textLength="76.8" lengthAdjust="spacingAndGlyphs" fill="#c9d1d9"> ✓ 4/14 </text>
 <text x="112.0" y="720" textLength="48.0" lengthAdjust="spacingAndGlyphs" fill="#0d1117" font-weight="bold"> ! 1 </text>
 <text x="169.6" y="720" textLength="48.0" lengthAdjust="spacingAndGlyphs" fill="#0d1117" font-weight="bold"> ? 1 </text>
 <text x="227.2" y="720" textLength="67.2" lengthAdjust="spacingAndGlyphs" fill="#0d1117" font-weight="bold"> ◆ 0/2 </text>
-<text x="304.0" y="720" textLength="192.0" lengthAdjust="spacingAndGlyphs" fill="#7d8590"> 0m · 53 lines read </text>
-<text x="505.6" y="720" textLength="403.2" lengthAdjust="spacingAndGlyphs" fill="#7d8590">needs changes: say what with c on the line</text>
-<text x="937.6" y="720" textLength="508.8" lengthAdjust="spacingAndGlyphs" fill="#7d8590"> space next · b back · e more · w whole stop · H help</text>
+<text x="304.0" y="720" textLength="211.2" lengthAdjust="spacingAndGlyphs" fill="#0d1117" font-weight="bold"> ⚑ 1 to fix · P sends </text>
+<text x="524.8" y="720" textLength="192.0" lengthAdjust="spacingAndGlyphs" fill="#7d8590"> 0m · 53 lines read </text>
+<text x="726.4" y="720" textLength="720.0" lengthAdjust="spacingAndGlyphs" fill="#7d8590">needs changes: say wha space next · b back · e more · w whole stop · H help</text>
 </svg>

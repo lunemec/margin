@@ -79,23 +79,20 @@
 <rect x="83.2" y="663" width="864.0" height="21" fill="#12261e"/>
 <text x="44.8" y="678" textLength="28.8" lengthAdjust="spacingAndGlyphs" fill="#7d8590"> 30</text>
 <text x="83.2" y="678" textLength="28.8" lengthAdjust="spacingAndGlyphs" fill="#3fb950" font-weight="bold">▎+ </text>
-<text x="112.0" y="678" textLength="796.8" lengthAdjust="spacingAndGlyphs" fill="#8b939e" font-style="italic">// Reserve takes qty units of sku out of stock, or fails without changing anything.</text>
+<text x="112.0" y="678" textLength="796.8" lengthAdjust="spacingAndGlyphs" fill="#bc9358" font-style="italic">// Reserve takes qty units of sku out of stock, or fails without changing anything.</text>
 <text x="947.2" y="678" textLength="9.6" lengthAdjust="spacingAndGlyphs" fill="#161b22">│</text>
 <text x="44.8" y="699" textLength="28.8" lengthAdjust="spacingAndGlyphs" fill="#7d8590"> 31</text>
 <text x="73.6" y="699" textLength="9.6" lengthAdjust="spacingAndGlyphs" fill="#38c5cf">┃</text>
-<text x="112.0" y="699" textLength="38.4" lengthAdjust="spacingAndGlyphs" fill="#ff7b71">func</text>
-<text x="160.0" y="699" textLength="19.2" lengthAdjust="spacingAndGlyphs" fill="#e6edf3">(s</text>
-<text x="188.8" y="699" textLength="9.6" lengthAdjust="spacingAndGlyphs" fill="#ff7b71" font-weight="bold">*</text>
-<text x="198.4" y="699" textLength="57.6" lengthAdjust="spacingAndGlyphs" fill="#e6edf3">Store)</text>
-<text x="265.6" y="699" textLength="67.2" lengthAdjust="spacingAndGlyphs" fill="#d2a8ff" font-weight="bold">Reserve</text>
-<text x="332.8" y="699" textLength="38.4" lengthAdjust="spacingAndGlyphs" fill="#e6edf3">(sku</text>
-<text x="380.8" y="699" textLength="57.6" lengthAdjust="spacingAndGlyphs" fill="#ff7b71">string</text>
-<text x="438.4" y="699" textLength="9.6" lengthAdjust="spacingAndGlyphs" fill="#e6edf3">,</text>
-<text x="457.6" y="699" textLength="28.8" lengthAdjust="spacingAndGlyphs" fill="#e6edf3">qty</text>
-<text x="496.0" y="699" textLength="28.8" lengthAdjust="spacingAndGlyphs" fill="#ff7b71">int</text>
-<text x="524.8" y="699" textLength="9.6" lengthAdjust="spacingAndGlyphs" fill="#e6edf3">)</text>
-<text x="544.0" y="699" textLength="48.0" lengthAdjust="spacingAndGlyphs" fill="#ff7b71">error</text>
-<text x="601.6" y="699" textLength="9.6" lengthAdjust="spacingAndGlyphs" fill="#e6edf3">{</text>
+<text x="112.0" y="699" textLength="38.4" lengthAdjust="spacingAndGlyphs" fill="#cc7833">func</text>
+<text x="150.4" y="699" textLength="115.2" lengthAdjust="spacingAndGlyphs" fill="#e6e1dc"> (s *Store) </text>
+<text x="265.6" y="699" textLength="67.2" lengthAdjust="spacingAndGlyphs" fill="#ffc66d">Reserve</text>
+<text x="332.8" y="699" textLength="48.0" lengthAdjust="spacingAndGlyphs" fill="#e6e1dc">(sku </text>
+<text x="380.8" y="699" textLength="57.6" lengthAdjust="spacingAndGlyphs" fill="#da4938">string</text>
+<text x="438.4" y="699" textLength="57.6" lengthAdjust="spacingAndGlyphs" fill="#e6e1dc">, qty </text>
+<text x="496.0" y="699" textLength="28.8" lengthAdjust="spacingAndGlyphs" fill="#da4938">int</text>
+<text x="524.8" y="699" textLength="19.2" lengthAdjust="spacingAndGlyphs" fill="#e6e1dc">) </text>
+<text x="544.0" y="699" textLength="48.0" lengthAdjust="spacingAndGlyphs" fill="#da4938">error</text>
+<text x="592.0" y="699" textLength="19.2" lengthAdjust="spacingAndGlyphs" fill="#e6e1dc"> {</text>
 <text x="947.2" y="699" textLength="9.6" lengthAdjust="spacingAndGlyphs" fill="#161b22">│</text>
 <rect x="16.0" y="705" width="28.8" height="21" fill="#79c0ff"/>
 <rect x="83.2" y="705" width="864.0" height="21" fill="#12261e"/>
@@ -104,11 +101,10 @@
 <text x="44.8" y="720" textLength="28.8" lengthAdjust="spacingAndGlyphs" fill="#7d8590"> 32</text>
 <text x="73.6" y="720" textLength="9.6" lengthAdjust="spacingAndGlyphs" fill="#38c5cf">┃</text>
 <text x="83.2" y="720" textLength="28.8" lengthAdjust="spacingAndGlyphs" fill="#3fb950" font-weight="bold">▎+ </text>
-<text x="150.4" y="720" textLength="19.2" lengthAdjust="spacingAndGlyphs" fill="#ff7b71">if</text>
-<text x="179.2" y="720" textLength="28.8" lengthAdjust="spacingAndGlyphs" fill="#e6edf3">qty</text>
-<text x="217.6" y="720" textLength="19.2" lengthAdjust="spacingAndGlyphs" fill="#ff7b71" font-weight="bold">&lt;=</text>
-<text x="246.4" y="720" textLength="9.6" lengthAdjust="spacingAndGlyphs" fill="#a5d6ff">0</text>
-<text x="265.6" y="720" textLength="9.6" lengthAdjust="spacingAndGlyphs" fill="#e6edf3">{</text>
+<text x="150.4" y="720" textLength="19.2" lengthAdjust="spacingAndGlyphs" fill="#cc7833">if</text>
+<text x="169.6" y="720" textLength="76.8" lengthAdjust="spacingAndGlyphs" fill="#e6e1dc"> qty &lt;= </text>
+<text x="246.4" y="720" textLength="9.6" lengthAdjust="spacingAndGlyphs" fill="#a5c261">0</text>
+<text x="256.0" y="720" textLength="19.2" lengthAdjust="spacingAndGlyphs" fill="#e6e1dc"> {</text>
 <text x="947.2" y="720" textLength="9.6" lengthAdjust="spacingAndGlyphs" fill="#79c0ff">┤</text>
 <text x="956.8" y="720" textLength="28.8" lengthAdjust="spacingAndGlyphs" fill="#0d1117" font-weight="bold"> 1 </text>
 <text x="985.6" y="720" textLength="220.8" lengthAdjust="spacingAndGlyphs" fill="#79c0ff"> i context  stock.go:32</text>
@@ -116,15 +112,15 @@
 <text x="44.8" y="741" textLength="28.8" lengthAdjust="spacingAndGlyphs" fill="#7d8590"> 33</text>
 <text x="73.6" y="741" textLength="9.6" lengthAdjust="spacingAndGlyphs" fill="#38c5cf">┃</text>
 <text x="83.2" y="741" textLength="28.8" lengthAdjust="spacingAndGlyphs" fill="#3fb950" font-weight="bold">▎+ </text>
-<text x="188.8" y="741" textLength="57.6" lengthAdjust="spacingAndGlyphs" fill="#ff7b71">return</text>
-<text x="256.0" y="741" textLength="172.8" lengthAdjust="spacingAndGlyphs" fill="#e6edf3">ErrInvalidQuantity</text>
+<text x="188.8" y="741" textLength="57.6" lengthAdjust="spacingAndGlyphs" fill="#cc7833">return</text>
+<text x="246.4" y="741" textLength="182.4" lengthAdjust="spacingAndGlyphs" fill="#e6e1dc"> ErrInvalidQuantity</text>
 <text x="947.2" y="741" textLength="9.6" lengthAdjust="spacingAndGlyphs" fill="#161b22">│</text>
 <text x="956.8" y="741" textLength="19.2" lengthAdjust="spacingAndGlyphs" fill="#79c0ff">▌ </text>
 <text x="976.0" y="741" textLength="460.8" lengthAdjust="spacingAndGlyphs" fill="#c9d1d9">Checked before taking the lock, so a bad request</text>
 <rect x="83.2" y="747" width="864.0" height="21" fill="#12261e"/>
 <text x="44.8" y="762" textLength="28.8" lengthAdjust="spacingAndGlyphs" fill="#7d8590"> 34</text>
 <text x="83.2" y="762" textLength="28.8" lengthAdjust="spacingAndGlyphs" fill="#3fb950" font-weight="bold">▎+ </text>
-<text x="150.4" y="762" textLength="9.6" lengthAdjust="spacingAndGlyphs" fill="#e6edf3">}</text>
+<text x="112.0" y="762" textLength="48.0" lengthAdjust="spacingAndGlyphs" fill="#e6e1dc">    }</text>
 <text x="947.2" y="762" textLength="9.6" lengthAdjust="spacingAndGlyphs" fill="#161b22">│</text>
 <text x="956.8" y="762" textLength="19.2" lengthAdjust="spacingAndGlyphs" fill="#79c0ff">▌ </text>
 <text x="976.0" y="762" textLength="278.4" lengthAdjust="spacingAndGlyphs" fill="#c9d1d9">never waits on other writers.</text>
@@ -132,18 +128,18 @@
 <text x="16.0" y="783" textLength="28.8" lengthAdjust="spacingAndGlyphs" fill="#0d1117" font-weight="bold"> 5 </text>
 <text x="44.8" y="783" textLength="28.8" lengthAdjust="spacingAndGlyphs" fill="#7d8590"> 35</text>
 <text x="73.6" y="783" textLength="9.6" lengthAdjust="spacingAndGlyphs" fill="#38c5cf">┃</text>
-<text x="150.4" y="783" textLength="48.0" lengthAdjust="spacingAndGlyphs" fill="#e6edf3">s.mu.</text>
-<text x="198.4" y="783" textLength="38.4" lengthAdjust="spacingAndGlyphs" fill="#d2a8ff" font-weight="bold">Lock</text>
-<text x="236.8" y="783" textLength="19.2" lengthAdjust="spacingAndGlyphs" fill="#e6edf3">()</text>
+<text x="112.0" y="783" textLength="86.4" lengthAdjust="spacingAndGlyphs" fill="#e6e1dc">    s.mu.</text>
+<text x="198.4" y="783" textLength="38.4" lengthAdjust="spacingAndGlyphs" fill="#ffc66d">Lock</text>
+<text x="236.8" y="783" textLength="19.2" lengthAdjust="spacingAndGlyphs" fill="#e6e1dc">()</text>
 <text x="947.2" y="783" textLength="9.6" lengthAdjust="spacingAndGlyphs" fill="#79c0ff">┤</text>
 <rect x="956.8" y="789" width="28.8" height="21" fill="#f0f6fc"/>
 <rect x="985.6" y="789" width="220.8" height="21" fill="#1c2433"/>
 <text x="44.8" y="804" textLength="28.8" lengthAdjust="spacingAndGlyphs" fill="#7d8590"> 36</text>
 <text x="73.6" y="804" textLength="9.6" lengthAdjust="spacingAndGlyphs" fill="#38c5cf">┃</text>
-<text x="150.4" y="804" textLength="48.0" lengthAdjust="spacingAndGlyphs" fill="#ff7b71">defer</text>
-<text x="208.0" y="804" textLength="48.0" lengthAdjust="spacingAndGlyphs" fill="#e6edf3">s.mu.</text>
-<text x="256.0" y="804" textLength="57.6" lengthAdjust="spacingAndGlyphs" fill="#d2a8ff" font-weight="bold">Unlock</text>
-<text x="313.6" y="804" textLength="19.2" lengthAdjust="spacingAndGlyphs" fill="#e6edf3">()</text>
+<text x="150.4" y="804" textLength="48.0" lengthAdjust="spacingAndGlyphs" fill="#cc7833">defer</text>
+<text x="198.4" y="804" textLength="57.6" lengthAdjust="spacingAndGlyphs" fill="#e6e1dc"> s.mu.</text>
+<text x="256.0" y="804" textLength="57.6" lengthAdjust="spacingAndGlyphs" fill="#ffc66d">Unlock</text>
+<text x="313.6" y="804" textLength="19.2" lengthAdjust="spacingAndGlyphs" fill="#e6e1dc">()</text>
 <text x="947.2" y="804" textLength="9.6" lengthAdjust="spacingAndGlyphs" fill="#79c0ff">┤</text>
 <text x="956.8" y="804" textLength="28.8" lengthAdjust="spacingAndGlyphs" fill="#0d1117" font-weight="bold"> 5 </text>
 <text x="985.6" y="804" textLength="220.8" lengthAdjust="spacingAndGlyphs" fill="#79c0ff" font-weight="bold"> i context  stock.go:35</text>
@@ -167,9 +163,7 @@
 <text x="44.8" y="867" textLength="28.8" lengthAdjust="spacingAndGlyphs" fill="#0d1117" font-weight="bold"> 37</text>
 <text x="73.6" y="867" textLength="9.6" lengthAdjust="spacingAndGlyphs" fill="#38c5cf">┃</text>
 <text x="83.2" y="867" textLength="28.8" lengthAdjust="spacingAndGlyphs" fill="#3fb950" font-weight="bold">▎+ </text>
-<text x="150.4" y="867" textLength="86.4" lengthAdjust="spacingAndGlyphs" fill="#e6edf3">available</text>
-<text x="246.4" y="867" textLength="19.2" lengthAdjust="spacingAndGlyphs" fill="#ff7b71" font-weight="bold">:=</text>
-<text x="275.2" y="867" textLength="115.2" lengthAdjust="spacingAndGlyphs" fill="#e6edf3">s.items[sku]</text>
+<text x="112.0" y="867" textLength="278.4" lengthAdjust="spacingAndGlyphs" fill="#e6e1dc">    available := s.items[sku]</text>
 <text x="947.2" y="867" textLength="9.6" lengthAdjust="spacingAndGlyphs" fill="#161b22">│</text>
 <text x="956.8" y="867" textLength="19.2" lengthAdjust="spacingAndGlyphs" fill="#79c0ff">▌ </text>
 <text x="976.0" y="867" textLength="470.4" lengthAdjust="spacingAndGlyphs" fill="#c9d1d9">Fixed: Reserve now records a rejected quantity in</text>
@@ -178,11 +172,8 @@
 <text x="44.8" y="888" textLength="28.8" lengthAdjust="spacingAndGlyphs" fill="#7d8590"> 38</text>
 <text x="73.6" y="888" textLength="9.6" lengthAdjust="spacingAndGlyphs" fill="#38c5cf">┃</text>
 <text x="83.2" y="888" textLength="28.8" lengthAdjust="spacingAndGlyphs" fill="#3fb950" font-weight="bold">▎+ </text>
-<text x="150.4" y="888" textLength="19.2" lengthAdjust="spacingAndGlyphs" fill="#ff7b71">if</text>
-<text x="179.2" y="888" textLength="86.4" lengthAdjust="spacingAndGlyphs" fill="#e6edf3">available</text>
-<text x="275.2" y="888" textLength="9.6" lengthAdjust="spacingAndGlyphs" fill="#e6edf3">&lt;</text>
-<text x="294.4" y="888" textLength="28.8" lengthAdjust="spacingAndGlyphs" fill="#e6edf3">qty</text>
-<text x="332.8" y="888" textLength="9.6" lengthAdjust="spacingAndGlyphs" fill="#e6edf3">{</text>
+<text x="150.4" y="888" textLength="19.2" lengthAdjust="spacingAndGlyphs" fill="#cc7833">if</text>
+<text x="169.6" y="888" textLength="172.8" lengthAdjust="spacingAndGlyphs" fill="#e6e1dc"> available &lt; qty {</text>
 <text x="947.2" y="888" textLength="9.6" lengthAdjust="spacingAndGlyphs" fill="#161b22">│</text>
 <text x="956.8" y="888" textLength="19.2" lengthAdjust="spacingAndGlyphs" fill="#79c0ff">▌ </text>
 <text x="976.0" y="888" textLength="470.4" lengthAdjust="spacingAndGlyphs" fill="#c9d1d9">the log with a delta of 0, so support can see it.</text>
@@ -193,21 +184,17 @@
 <text x="44.8" y="909" textLength="28.8" lengthAdjust="spacingAndGlyphs" fill="#7d8590"> 39</text>
 <text x="73.6" y="909" textLength="9.6" lengthAdjust="spacingAndGlyphs" fill="#38c5cf">┃</text>
 <text x="83.2" y="909" textLength="28.8" lengthAdjust="spacingAndGlyphs" fill="#3fb950" font-weight="bold">▎+ </text>
-<text x="188.8" y="909" textLength="57.6" lengthAdjust="spacingAndGlyphs" fill="#ff7b71">return</text>
-<text x="256.0" y="909" textLength="38.4" lengthAdjust="spacingAndGlyphs" fill="#e6edf3">fmt.</text>
-<text x="294.4" y="909" textLength="57.6" lengthAdjust="spacingAndGlyphs" fill="#d2a8ff" font-weight="bold">Errorf</text>
-<text x="352.0" y="909" textLength="9.6" lengthAdjust="spacingAndGlyphs" fill="#e6edf3">(</text>
-<text x="361.6" y="909" textLength="230.4" lengthAdjust="spacingAndGlyphs" fill="#a5d6ff">"%w: %s has %d, want %d"</text>
-<text x="592.0" y="909" textLength="9.6" lengthAdjust="spacingAndGlyphs" fill="#e6edf3">,</text>
-<text x="611.2" y="909" textLength="153.6" lengthAdjust="spacingAndGlyphs" fill="#e6edf3">ErrInsufficient,</text>
-<text x="774.4" y="909" textLength="38.4" lengthAdjust="spacingAndGlyphs" fill="#e6edf3">sku,</text>
-<text x="822.4" y="909" textLength="96.0" lengthAdjust="spacingAndGlyphs" fill="#e6edf3">available,</text>
-<text x="928.0" y="909" textLength="19.2" lengthAdjust="spacingAndGlyphs" fill="#e6edf3">qt</text>
+<text x="188.8" y="909" textLength="57.6" lengthAdjust="spacingAndGlyphs" fill="#cc7833">return</text>
+<text x="246.4" y="909" textLength="48.0" lengthAdjust="spacingAndGlyphs" fill="#e6e1dc"> fmt.</text>
+<text x="294.4" y="909" textLength="57.6" lengthAdjust="spacingAndGlyphs" fill="#ffc66d">Errorf</text>
+<text x="352.0" y="909" textLength="9.6" lengthAdjust="spacingAndGlyphs" fill="#e6e1dc">(</text>
+<text x="361.6" y="909" textLength="230.4" lengthAdjust="spacingAndGlyphs" fill="#a5c261">"%w: %s has %d, want %d"</text>
+<text x="592.0" y="909" textLength="355.2" lengthAdjust="spacingAndGlyphs" fill="#e6e1dc">, ErrInsufficient, sku, available, qt</text>
 <text x="947.2" y="909" textLength="9.6" lengthAdjust="spacingAndGlyphs" fill="#161b22">│</text>
 <text x="956.8" y="909" textLength="19.2" lengthAdjust="spacingAndGlyphs" fill="#79c0ff">▌ </text>
 <text x="976.0" y="909" textLength="211.2" lengthAdjust="spacingAndGlyphs" fill="#c9d1d9">TestReserve covers it.</text>
 <text x="44.8" y="930" textLength="28.8" lengthAdjust="spacingAndGlyphs" fill="#7d8590"> 40</text>
-<text x="150.4" y="930" textLength="9.6" lengthAdjust="spacingAndGlyphs" fill="#e6edf3">}</text>
+<text x="112.0" y="930" textLength="48.0" lengthAdjust="spacingAndGlyphs" fill="#e6e1dc">    }</text>
 <text x="947.2" y="930" textLength="9.6" lengthAdjust="spacingAndGlyphs" fill="#161b22">│</text>
 <rect x="83.2" y="936" width="192.0" height="21" fill="#2c1517"/>
 <rect x="275.2" y="936" width="19.2" height="21" fill="#6e2b30"/>

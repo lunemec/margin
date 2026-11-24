@@ -84,3 +84,14 @@ func CommentBody(text string) (prefix, body string) {
 	}
 	return text[:len(text)-len(rest)], rest
 }
+
+// WithoutAnswer drops the lead that tells the agent which of its questions a comment answers; the
+// kind and the reader's words stay. Others reading the comment never saw the agent's question.
+func WithoutAnswer(text string) string {
+	if rest, ok := strings.CutPrefix(text, answerLead); ok {
+		if i := strings.Index(rest, "): "); i >= 0 {
+			return rest[i+len("): "):]
+		}
+	}
+	return text
+}

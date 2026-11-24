@@ -40,7 +40,9 @@ export const state = {
 };
 
 // hooks are filled in by app.js, so the review can reach the agent terminal.
-export const hooks = { fitTerminal() {}, focusTerminal() {}, showReviewer() {}, themeChanged() {} };
+// noteRef(id, n) resolves a mention of note n of stop id: { station, note } indexes, null when the stop
+// has no such note, undefined when id is not a stop (so file.go:12 stays text).
+export const hooks = { fitTerminal() {}, focusTerminal() {}, showReviewer() {}, themeChanged() {}, noteRef() {} };
 
 // The theme setting: "light", "dark", or "" to follow the system.
 let themeMode = "";
@@ -72,10 +74,27 @@ export function esc(s) {
 }
 
 export function prose(s) {
-  return esc(s)
-    .replace(/`([^`]+)`/g, "<code>$1</code>")
-    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
-    .replace(/\n/g, "<br>");
+  return linkRefs(
+    esc(s)
+      .replace(/`([^`]+)`/g, "<code>$1</code>")
+      .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+      .replace(/\n/g, "<br>"),
+  );
+}
+
+// linkRefs turns mentions of notes (stop:n, as margin goto takes them) into links; html is already
+// escaped. The longest tail of the word that is a stop counts: "(resolve:5" links "resolve:5".
+function linkRefs(html) {
+  return html.replace(/([^\s:<>]+):(\d+)(?!\w)/g, (m, head, num) => {
+    for (let off = 0; off < head.length; off++) {
+      const t = hooks.noteRef(head.slice(off), +num);
+      if (t === undefined) continue;
+      const label = `${head.slice(off)}:${num}`;
+      const link = t ? `<a class="ref" href="#" data-ref="${t.station}:${t.note}" title="go to note ${label}">${label}</a>` : `<span class="ref broken" title="no such note">${label}</span>`;
+      return head.slice(0, off) + link;
+    }
+    return m;
+  });
 }
 
 export function oneLine(s) {

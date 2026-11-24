@@ -17,6 +17,7 @@ var Light bool
 
 type Span struct {
 	Text   string
+	Type   chroma.TokenType
 	Color  string
 	Light  string
 	Bold   bool
@@ -36,7 +37,7 @@ func Highlight(filename string, lines []string) [][]Span {
 	if lexer == nil {
 		lexer = lexers.Fallback
 	}
-	style, light := styles.Get("github-dark"), styles.Get("github")
+	style, light := railscasts, styles.Get("github")
 	it, err := chroma.Coalesce(lexer).Tokenise(nil, content)
 	if err != nil {
 		for i, l := range lines {
@@ -47,7 +48,7 @@ func Highlight(filename string, lines []string) [][]Span {
 	line := 0
 	for tok := it(); tok != chroma.EOF; tok = it() {
 		e := style.Get(tok.Type)
-		sp := Span{Bold: e.Bold == chroma.Yes, Italic: e.Italic == chroma.Yes}
+		sp := Span{Type: tok.Type, Bold: e.Bold == chroma.Yes, Italic: e.Italic == chroma.Yes}
 		if e.Colour.IsSet() {
 			sp.Color = e.Colour.String()
 		}
