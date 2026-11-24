@@ -633,20 +633,22 @@ button.chip.chip-issue.on { background: var(--issue-tint); border-color: var(--i
 
 #toolbar { display: flex; align-items: flex-end; gap: 4px; padding: 5px 12px; border-bottom: 1px solid var(--line); background: var(--bg-1); flex: none; flex-wrap: wrap; }
 #toolbar-actions { display: contents; }
+#toolbar button, #note-filter, #toolbar input.search { min-height: 28px; font-family: var(--sans); font-size: 12px; line-height: 18px; }
+#toolbar button { padding: 3px 9px; }
 .toolbar-field { display: flex; flex-direction: column; gap: 2px; max-width: 100%; margin-right: 4px; }
 .toolbar-label { padding-left: 2px; font-size: 11px; color: var(--fg-dim); }
-.segments { display: inline-grid; grid-template-columns: 1fr 1fr; gap: 2px; padding: 2px; border-radius: 8px; background: var(--bg); }
-.segments button { padding: 2px 9px; font-size: 12px; white-space: nowrap; background: transparent; border-color: transparent; color: var(--fg-dim); }
+.segments { display: inline-grid; grid-template-columns: 1fr 1fr; gap: 2px; padding: 0 2px; border-radius: 8px; background: var(--bg); }
+.segments button { white-space: nowrap; background: transparent; border-color: transparent; color: var(--fg-dim); }
 .segments button:not([aria-disabled="true"]):hover { color: var(--fg); }
 .segments button[aria-pressed="true"] { background: var(--primary-bg); color: var(--on-primary); font-weight: 600; }
 .segments button[aria-disabled="true"] { opacity: .65; cursor: default; }
 .note-filter-field { min-width: 0; max-width: min(100%, 16rem); }
-#note-filter { max-width: 100%; min-height: 28px; color: var(--fg); background: var(--bg-2); border: 1px solid var(--line); border-radius: 6px; font: 12px var(--sans); padding: 3px 5px; cursor: pointer; }
+#note-filter { max-width: 100%; color: var(--fg); background: var(--bg-2); border: 1px solid var(--line); border-radius: 6px; padding: 3px 5px; cursor: pointer; }
 .segments button:focus-visible, #note-filter:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-button.tb { padding: 2px 9px; font-size: 12px; background: transparent; color: var(--fg-dim); }
+button.tb { background: transparent; color: var(--fg-dim); }
 button.tb.on { color: var(--fg); background: var(--bg-3); border-color: var(--primary-line); }
 button.tb.warn { color: var(--warn-fg); border-color: var(--question); }
-input.search { margin-left: auto; width: 200px; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; color: var(--fg); padding: 3px 8px; font: 12.5px var(--sans); outline: none; }
+input.search { margin-left: auto; width: 200px; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; color: var(--fg); padding: 3px 8px; outline: none; }
 input.search:focus { border-color: var(--accent); }
 mark { background: var(--search-bg); color: inherit; border-radius: 2px; }
 
