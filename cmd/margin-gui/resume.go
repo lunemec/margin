@@ -52,6 +52,18 @@ type reviewResume struct {
 	WalkMode        walkMode                      `json:"walk_mode,omitempty"`
 	WalkPositions   map[walkMode]*ReadingPosition `json:"walk_positions,omitempty"`
 	WalkPreparation string                        `json:"walk_preparation,omitempty"`
+	NoteVisibility  string                        `json:"note_visibility,omitempty"`
+}
+
+func (saved reviewResume) noteVisibility(blind bool) string {
+	switch saved.NoteVisibility {
+	case "risky", "all", "hide":
+		return saved.NoteVisibility
+	}
+	if blind {
+		return "hide"
+	}
+	return "all"
 }
 
 type lastReview struct {

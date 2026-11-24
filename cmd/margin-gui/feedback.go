@@ -18,23 +18,24 @@ import (
 
 // ReaderView is what the reader decided so far, kept in the same state file the terminal viewer uses.
 type ReaderView struct {
-	Verdicts  map[string]string `json:"verdicts"`
-	Orient    string            `json:"orient"`
-	Design    string            `json:"design"`
-	Reviewed  []string          `json:"reviewed"`
-	Flagged   []string          `json:"flagged"`
-	Dismissed []string          `json:"dismissed"`
-	Comments  []CommentView     `json:"comments"`
-	Drafts    int               `json:"drafts"`
-	ToFix     int               `json:"toFix"`
-	Outcome   OutcomeView       `json:"outcome"`
-	Labels    []LabelView       `json:"labels"`
-	Questions []QuestionView    `json:"questions"`
-	Full      bool              `json:"full"`
-	Blind     bool              `json:"blind"`
-	Revealed  []string          `json:"revealed"`
-	Visited   []string          `json:"visited"`
-	Seen      map[string]string `json:"seen"`
+	Verdicts       map[string]string `json:"verdicts"`
+	Orient         string            `json:"orient"`
+	Design         string            `json:"design"`
+	Reviewed       []string          `json:"reviewed"`
+	Flagged        []string          `json:"flagged"`
+	Dismissed      []string          `json:"dismissed"`
+	Comments       []CommentView     `json:"comments"`
+	Drafts         int               `json:"drafts"`
+	ToFix          int               `json:"toFix"`
+	Outcome        OutcomeView       `json:"outcome"`
+	Labels         []LabelView       `json:"labels"`
+	Questions      []QuestionView    `json:"questions"`
+	Full           bool              `json:"full"`
+	Blind          bool              `json:"blind"`
+	NoteVisibility string            `json:"noteVisibility"`
+	Revealed       []string          `json:"revealed"`
+	Visited        []string          `json:"visited"`
+	Seen           map[string]string `json:"seen"`
 }
 
 type ReaderUpdate struct {
@@ -367,5 +368,7 @@ func (r *Reviews) change(fn func(*doc.Doc, *state.State) error) (*ReaderUpdate, 
 // readerUpdate is called with stateMu held so replies can be applied in order.
 func (r *Reviews) readerUpdate(d *doc.Doc, st *state.State) ReaderUpdate {
 	r.readerRevision++
-	return ReaderUpdate{Path: d.Review.Path, Mode: r.walk.mode, Reader: readerOf(d, st, r.walk), Counts: tui.CountsOf(d, st), Revision: r.readerRevision}
+	reader := readerOf(d, st, r.walk)
+	reader.NoteVisibility = readReviewResume(d.Review.Path).noteVisibility(st.Blind)
+	return ReaderUpdate{Path: d.Review.Path, Mode: r.walk.mode, Reader: reader, Counts: tui.CountsOf(d, st), Revision: r.readerRevision}
 }

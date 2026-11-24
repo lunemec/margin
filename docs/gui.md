@@ -92,12 +92,18 @@ can switch between reviews without stopping one.
 A review reads the same way as in the terminal viewer; [margin-tui](tui.md) describes it in detail,
 with pictures. In short:
 
+- **More.** As the review pane narrows, the toolbar moves controls into **More** in order of
+  priority. Open it to see the controls and their selected values. Press `/` to focus Search
+  wherever it appears.
 - **Orient → Walk → Decide.** The overview says what the change is for and what it does, shows the
   route through the stops with their risk and size, and asks whether the change makes sense done
   this way (`y`, `n`, `?`). A stop groups related changes. **Step by step** takes you through the
   brief, background code, changes with notes, and verdict (`1` good, `2` needs changes, `3` not sure).
   **Full group** shows that group of changes on one page. Switch display with `w`.
-- **Note filter.** **All notes** includes every kind of agent note. **Issues, questions & decisions**
+- **Notes.** **Risky** shows note cards and badges from high-risk stops. **All** shows every card
+  that matches the filter. **Hide** lets you reveal the cards for one stop with **Reveal notes**
+  (`v`). Guided questions and decisions stay available. Press `n` to cycle note visibility.
+- **Filter notes.** **All notes** includes every kind of agent note. **Issues, questions & decisions**
   includes reported issues, questions, and decisions for you to make. **Issues with evidence**
   includes only issues that cite evidence. Choose a focus area to see notes tagged with that topic.
   Specific filters dim files, stops and steps without matching notes. You can still open any of
@@ -110,8 +116,9 @@ with pictures. In short:
   problem or giving a stop "needs changes" only marks it; **Ask to fix** (`P`) in the top bar or
   the recap hands them to the agent (a stop with your comments on it as the brief), and each comes
   back as a comment it resolves.
-- **Seeing more.** Search (`/`), folding (`z`), removed lines (`d`), side by side
-  (`s`), more context (`+` `-`) or the whole file (`f`), blind mode, callers and history around a
+- **Seeing more.** Choose **Added**, **Deleted**, or **All** changes (`d`) and read them **Inline**
+  or in **Split** columns (`s`). Search (`/`), folding (`z`), more context (`+` `-`) or the
+  whole file (`f`), callers and history around a
   stop, per-test coverage with the tests that run a line (`t`), a spotlight on one test, untested
   changes (`u`), the Tests stop, copying a note or a stop (`y` `Y`), and export for posting.
 - **Clickable, keys optional.** Clicking a line puts a bar under it: *Comment* (`c`), *Ask* (`a`),
@@ -368,7 +375,7 @@ What differs is how you get around:
   in. margin-tui can also send the lines to `$EDITOR` with `E`.
 - **Answers to your comments.** margin-gui shows the note formatted, with a reply box under each
   answer. margin-tui shows it as text in an overlay, `r` replies, and `e` edits it in `$EDITOR`.
-- **Switches.** Blind mode is a toolbar switch instead of the `--blind` flag, and *send messages with
+- **Switches.** Use **Hide** in the Notes toolbar control to reveal note cards one stop at a time, and *send messages with
   Enter* replaces `--no-submit`.
 
 ## Building

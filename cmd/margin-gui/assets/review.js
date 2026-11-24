@@ -4,6 +4,7 @@ import { openAnswers, hasAnswerDraft } from "./answers.js";
 import { agentReply, discussionThreads, localResolution, nextThread, questionReply, questionSelection, questionTurns, readReply, setLocalResolution, unreadReply } from "./discussions.js";
 import { editorMode, setEditorMode } from "./editor-mode.js";
 import { runTests, tryChange, toggleTestPanel, resetTests, statusOf, statusIcon, testHooks, results } from "./tests.js";
+import { reviewToolbarOverflow } from "./toolbar-overflow.js";
 
 export { closeModal };
 
@@ -19,9 +20,31 @@ const cur = () => state.view?.stations[state.station];
 const guided = () => !reader().full;
 const fullDisplayLabel = () => state.view?.mode === "file" ? "Full file diff" : "Full group";
 const modeButtons = $$("#reading-mode button");
+const changeButtons = $$("#changes-mode button");
+const splitButtons = $$("#diff-layout button");
+const noteVisibilityButtons = $$("#notes-visibility button");
 const noteFilter = $("#note-filter");
+const toolbarOverflow = reviewToolbarOverflow($("#toolbar"));
+const search = $("#search");
 for (const button of modeButtons) button.onclick = () => setReadingMode(button.dataset.full === "true");
+for (const button of changeButtons) button.onclick = () => setChanges(button.dataset.changes);
+for (const button of splitButtons) button.onclick = () => setSplit(button.dataset.split === "true");
+for (const button of noteVisibilityButtons) button.onclick = () => setNoteVisibility(button.dataset.noteVisibility);
 noteFilter.onchange = () => setNoteFilter(noteFilter.value);
+search.onkeydown = (e) => {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    e.stopPropagation();
+    state.query = search.value;
+    searchNext(e.shiftKey ? -1 : 1, true);
+    toolbarOverflow.finishSearch();
+  } else if (e.key === "Escape") {
+    e.preventDefault();
+    e.stopPropagation();
+    endSearch();
+    toolbarOverflow.finishSearch();
+  }
+};
 const walking = () => guided() && cur()?.kind === "code";
 const partKey = (s, pi) => `${s.id}|${pi}`;
 const partData = (s, pi) => state.parts[partKey(s, pi)] ?? s.parts[pi];
@@ -185,8 +208,10 @@ function applyReader(update) {
   v.readerRevision = update.readerRevision;
   if (JSON.stringify(v.reader) === JSON.stringify(update.reader) && JSON.stringify(v.counts) === JSON.stringify(update.counts)) return;
   const sent = sentComments(v);
+  const visibilityChanged = v.reader.noteVisibility !== update.reader.noteVisibility;
   v.reader = update.reader;
   v.counts = update.counts;
+  if (visibilityChanged && selectedNote() && !navigableNote(cur(), selectedNote())) state.note = -1;
   indexDiscussions();
   const scroll = $("#station").scrollTop;
   renderReview();
@@ -217,6 +242,7 @@ export function renderWalkthrough() {
   const opened = state.opened;
   const walk = state.view?.path === opened?.path ? state.view?.walkthrough : null;
   $("#walkthrough").classList.toggle("hidden", !walk);
+  toolbarOverflow.schedule();
   if (!walk || walk.ready) $("#walkthrough-feedback").textContent = "";
   if (!walk) return;
   const preparing = !walk.ready && (opened.launchingWalkthrough || (opened.walkAgentLive && opened.agent?.walkPreparing));
@@ -463,11 +489,15 @@ async function gotoTarget(arg) {
 }
 
 function gotoNote(si, ni) {
-  if (si !== state.station) goStation(si);
   const s = state.view.stations[si];
   const note = s.notes[ni];
+  if (note.part >= 0 && note.line >= 0 && state.changes !== "all" && !lineVisible(s, note.part, note.line)) {
+    state.changes = "all";
+    if (si === state.station) rerenderKeepScroll();
+  }
+  if (si !== state.station) goStation(si);
   focusNote(ni);
-  if (note.part >= 0) selectRow(s.id, note.part, note.line, false);
+  if (note.part >= 0 && note.line >= 0) selectRow(s.id, note.part, note.line, false);
 }
 
 // Mentions of other notes in prose (stop:n) are links. Following one remembers where the reader was,
@@ -549,6 +579,10 @@ async function gotoFileLine(file, line) {
           const s = st[si];
           if (!(await loadPart(s, pi, state.expand[partKey(s, pi)] ?? 0, true))) return;
         }
+        if (state.changes !== "all" && !lineVisible(st[si], pi, line - 1)) {
+          state.changes = "all";
+          renderToolbar();
+        }
         jump({ si, pi, line: line - 1 });
         return;
       }
@@ -559,9 +593,10 @@ async function gotoFileLine(file, line) {
 
 // Notes: blind mode and filters
 
-function blind(s) {
-  const r = reader();
-  return s?.kind === "code" && s.risk === "high" && r.blind && !r.revealed.includes(s.id);
+const noteVisibility = () => reader().noteVisibility ?? "all";
+
+function cardsHidden(s) {
+  return s?.kind === "code" && noteVisibility() === "hide" && !reader().revealed.includes(s.id);
 }
 
 const filterDescriptions = {
@@ -582,7 +617,6 @@ function filters() {
 const asks = (n) => ["issue", "question", "decide"].includes(n.kind);
 
 function noteVisible(s, n) {
-  if (blind(s)) return false;
   switch (state.filter) {
     case "All notes":
       return true;
@@ -594,8 +628,12 @@ function noteVisible(s, n) {
   return !!n.focus && "Focus: " + n.focus === state.filter;
 }
 
+function noteCardVisible(s, n) {
+  return !cardsHidden(s) && (noteVisibility() !== "risky" || n.highRisk) && noteVisible(s, n);
+}
+
 function filteringNotes(s) {
-  return s.kind === "code" && state.filter !== "All notes" && !blind(s);
+  return s.kind === "code" && state.filter !== "All notes";
 }
 
 function stopHasNoMatchingNotes(s) {
@@ -658,6 +696,13 @@ export function renderReview() {
 
 function renderToolbar() {
   for (const button of modeButtons) button.setAttribute("aria-pressed", button.dataset.full === String(!guided()));
+  for (const group of $$("#toolbar .comparison-option")) group.classList.toggle("hidden", !state.view.hasBase);
+  for (const button of changeButtons) button.setAttribute("aria-pressed", String(button.dataset.changes === state.changes));
+  for (const button of splitButtons) button.setAttribute("aria-pressed", String(button.dataset.split === String(state.split)));
+  for (const button of noteVisibilityButtons) {
+    button.setAttribute("aria-pressed", String(button.dataset.noteVisibility === noteVisibility()));
+    button.setAttribute("aria-disabled", String(savingNoteVisibility === state.opened));
+  }
   const fullButton = $("#reading-full");
   fullButton.textContent = fullDisplayLabel();
   fullButton.title = state.view.mode === "file" ? "See all changed sections of this file on one page (w)" :
@@ -677,49 +722,80 @@ function renderToolbar() {
 
   const s = cur();
   const tb = $("#toolbar-actions");
-  tb.innerHTML = "";
-  const btn = (label, title, on, fn, cls = "") => {
-    const b = el(`<button class="tb${on ? " on" : ""} ${cls}" title="${esc(title)}">${label}</button>`);
-    b.onclick = fn;
+  toolbarOverflow.clearActions();
+  if (document.activeElement !== search && search.value !== state.query) search.value = state.query;
+  const btn = (label, title, on, fn, overflow, cls = "") => {
+    const b = el(`<button type="button" class="tb${on ? " on" : ""} ${cls}" title="${esc(title)}">${label}</button>`);
+    b.dataset.overflow = overflow;
+    b.onclick = () => {
+      toolbarOverflow.closeForAction(b);
+      fn();
+    };
     tb.append(b);
     return b;
   };
-  btn("Removed", "Show removed lines (d)", state.showGhosts, () => toggle("showGhosts"));
-  btn("Split", "Old and new side by side (s)", state.split, () => toggle("split"));
-  btn("Show notes", "Show the agent's note cards (n)", state.showNotes, () => toggle("showNotes"));
-  if (!guided()) btn("Fold", "Fold unchanged stretches (z)", !state.unfold, () => toggle("unfold"));
-  btn("Blind", "Hide the agent's notes on high-risk stops until you revealed them", reader().blind, () => act("SetBlind", !reader().blind));
-  if (blind(s)) btn("Reveal notes", "Show the agent's notes on this stop (v)", false, reveal, "warn");
-  const search = el(`<input id="search" class="search" placeholder="Search /" value="${esc(state.query)}">`);
-  search.onkeydown = (e) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      state.query = search.value;
-      searchNext(e.shiftKey ? -1 : 1, true);
-      search.blur();
-    }
-    if (e.key === "Escape") {
-      e.preventDefault();
-      endSearch();
-      search.blur();
-    }
-  };
-  tb.append(search);
-  if (s?.kind === "code" && state.view.coverage && s.cov?.measured) btn("▶ Tests", "Run the tests that run this stop's changed lines (T without a selected line)", false, () => runFor(s, -1));
-  if (s?.kind === "code" && state.view.coverage && s.cov?.missed) btn("Next untested", "The next changed line no test runs (u, U goes back)", false, () => nextUntested(1));
-  if (state.spot >= 0) btn("Spotlight: " + esc(state.view.coverage?.tests[state.spot]?.label ?? "") + " ✕", "End the spotlight (esc)", true, endSpot, "warn");
-  if (reader().comments.some((c) => !c.draft)) btn("Answers", "The agent's answers to your comments, to read, edit or reply to (A)", false, () => openDiscussionAnswers());
-  const questions = btn("Questions", "Your diff questions and the agent's replies", false, () => openDiffQuestions());
+  if (!guided()) btn("Fold", "Fold unchanged stretches (z)", !state.unfold, () => toggle("unfold"), "layout");
+  if (cardsHidden(s)) btn("Reveal notes", "Show note cards and badges on this stop (v)", false, reveal, "notes", "warn");
+  if (s?.kind === "code" && state.view.coverage && s.cov?.measured) btn("▶ Tests", "Run the tests that run this stop's changed lines (T without a selected line)", false, () => runFor(s, -1), "tests");
+  if (s?.kind === "code" && state.view.coverage && s.cov?.missed) btn("Next untested", "The next changed line no test runs (u, U goes back)", false, () => nextUntested(1), "tests");
+  if (state.spot >= 0) btn("Spotlight: " + esc(state.view.coverage?.tests[state.spot]?.label ?? "") + " ✕", "End the spotlight (esc)", true, endSpot, "tests", "warn");
+  if (reader().comments.some((c) => !c.draft)) btn("Answers", "The agent's answers to your comments, to read, edit or reply to (A)", false, () => openDiscussionAnswers(), "github");
+  const questions = btn("Questions", "Your diff questions and the agent's replies", false, () => openDiffQuestions(), "github");
   questions.id = "diff-questions-btn";
   questions.classList.toggle("hidden", !diffQuestions.length);
-  tb.append(discussionNavigation());
+  const discussionNav = discussionNavigation();
+  discussionNav.dataset.overflow = "github";
+  discussionNav.onclick = (e) => {
+    if (e.target.closest("button")) toolbarOverflow.closeForAction(discussionNav);
+  };
+  tb.append(discussionNav);
   if (state.gh) {
     const open = ghOpen().length;
-    btn(`GitHub${open ? " · " + open + " open" : ""}`, `Everything said on PR #${state.gh.number}: threads on the code and the conversation`, false, openGitHubPanel);
-    btn("↻", "Pull comments, replies, reactions and resolved state from GitHub again", false, pullGitHub);
+    btn(`GitHub${open ? " · " + open + " open" : ""}`, `Everything said on PR #${state.gh.number}: threads on the code and the conversation`, false, openGitHubPanel, "github");
+    btn("↻", "Pull comments, replies, reactions and resolved state from GitHub again", false, pullGitHub, "github").setAttribute("aria-label", "Refresh GitHub");
   }
-  btn("Export", "Your comments, flagged problems and calls, to post yourself", false, openExport);
-  btn("?", "All keys (H)", false, openHelp);
+  btn("Export", "Your comments, flagged problems and calls, to post yourself", false, openExport, "export");
+  btn("?", "All keys (H)", false, openHelp, "help").setAttribute("aria-label", "Help");
+  toolbarOverflow.schedule();
+}
+
+function setChanges(mode) {
+  if (!state.view.hasBase || mode === state.changes || !allowReviewViewChange()) return;
+  state.changes = mode;
+  const s = cur();
+  const sel = state.sel;
+  state.block = null;
+  if (sel?.station === s.id && !lineVisible(s, sel.part, sel.line)) {
+    state.sel = null;
+  }
+  if (state.compose?.station === s.id && !lineVisible(s, state.compose.part, state.compose.line)) state.compose = null;
+  if (selectedNote() && !navigableNote(s, selectedNote())) state.note = -1;
+  rerenderKeepScroll();
+}
+
+function cycleToolbarChoice(buttons) {
+  const selected = buttons.findIndex((button) => button.getAttribute("aria-pressed") === "true");
+  buttons[(selected + 1) % buttons.length].click();
+}
+
+function setSplit(split) {
+  if (!state.view.hasBase || state.split === split) return;
+  state.split = split;
+  rerenderKeepScroll();
+}
+
+let savingNoteVisibility;
+async function setNoteVisibility(mode) {
+  const opened = state.opened;
+  if (!opened || opened === savingNoteVisibility || mode === noteVisibility() || !allowReviewViewChange()) return;
+  savingNoteVisibility = opened;
+  renderToolbar();
+  try {
+    await act("SetNoteVisibility", opened.path, mode);
+  } finally {
+    if (savingNoteVisibility === opened) savingNoteVisibility = null;
+    if (state.opened === opened) renderToolbar();
+  }
 }
 
 function toggle(key) {
@@ -893,18 +969,35 @@ function noteStyle(n) {
 
 const untab = (t) => String(t ?? "").replaceAll("\t", "    ");
 
-function ghostRow(text, moved, hl, right) {
+function ghostRow(text, moved, hl, split, address) {
   text = untab(text);
-  const cls = moved ? "ghost moved" : "ghost";
-  const body = moved ? "← " + esc(text) : renderSpans(text, state.query, hl ? { ranges: [hl], open: '<span class="del-hl">', close: "</span>" } : null);
-  return el(`<div class="row ${cls}"${moved ? ` title="moved to ${esc(moved)}"` : ""}><span class="mark"></span><span class="cov"></span><span class="ln"></span>
-    <span class="src${right !== undefined ? " left" : ""}">${body}</span>${right !== undefined ? `<span class="src right">${right}</span>` : ""}</div>`);
+  const cls = moved ? "ghost moved navable" : "ghost navable";
+  const body = (moved ? "← " : "") + renderSpans(text, state.query, hl ? { ranges: [hl], open: '<span class="del-hl">', close: "</span>" } : null);
+  return el(`<div class="row ${cls}" data-ghost="${address}"${moved ? ` title="moved to ${esc(moved)}"` : ""}><span class="mark"></span><span class="cov"></span><span class="ln"></span>
+    <span class="src${split ? " left" : ""}">${body}</span>${split ? '<span class="src right"></span>' : ""}</div>`);
+}
+
+function diffRowVisible(row) {
+  if (!row?.n) return false;
+  switch (state.changes) {
+    case "added": return row.k !== "del";
+    case "deleted": return row.k !== "add" && row.k !== "chg";
+    default: return true;
+  }
+}
+
+function lineVisible(s, pi, line) {
+  return diffRowVisible(partData(s, pi)?.rows?.find((row) => row.n === line + 1));
+}
+
+function navigableNote(s, note) {
+  return noteCardVisible(s, note) && (note.part < 0 || note.line < 0 || lineVisible(s, note.part, note.line));
 }
 
 // codeRows draws lines from..to of a part, with the notes, comments and questions on each line below it.
 function codeRows(s, pi, from, to, opts = {}) {
   const p = partData(s, pi);
-  const split = state.split && p.diffed;
+  const split = state.split && (p.diffed || p.base || p.newFile);
   const scroll = el(`<div class="code-scroll"><div class="code code-inner${split ? " split" : ""}"></div></div>`);
   const code = scroll.firstElementChild;
   const shown = opts.shown ?? new Set();
@@ -914,14 +1007,19 @@ function codeRows(s, pi, from, to, opts = {}) {
   const hlOld = (r) => (r.hl ? [r.hl[0], r.hl[1]] : null);
   // In side by side, removed lines pair with the changed lines that replaced them.
   const pairedLeft = new Map();
-  for (let k = 0; k < rows.length; k++) {
-    const r = rows[k];
-    for (let j = 0; j < (r.g ?? []).length; j++) {
-      const c = rows[k + j];
-      if (!split || !c || c.k !== "chg" || (j > 0 && (c.g ?? []).length) || r.gm?.[j]) break;
-      pairedLeft.set(c.n, { text: r.g[j], hl: hlOld(c), from: k });
+  const pairedCounts = new Map();
+  if (split && state.changes === "all") {
+    for (let k = 0; k < rows.length; k++) {
+      const r = rows[k];
+      for (let j = 0; j < (r.g ?? []).length; j++) {
+        const c = rows[k + j];
+        if (!c || c.k !== "chg" || (j > 0 && (c.g ?? []).length) || r.gm?.[j]) break;
+        pairedLeft.set(c.n, { text: r.g[j], hl: hlOld(c), address: `${pi}:${r.n}:${j}` });
+        pairedCounts.set(k, j + 1);
+      }
     }
   }
+  let showsChanges = false;
   for (let k = 0; k < rows.length; k++) {
     const r = rows[k];
     const line = r.n - 1;
@@ -941,23 +1039,23 @@ function codeRows(s, pi, from, to, opts = {}) {
     const trb = state.trying;
     const inTry = trb && trb.station === s.id && trb.part === pi && r.n && line >= trb.line && line <= trb.end;
     if (inTry && line > trb.line) continue;
-    const ghosts = r.g ?? [];
-    if (split && state.showGhosts) {
-      const paired = [...pairedLeft.values()].filter((v) => v.from === k).length;
-      ghosts.slice(paired).forEach((g, j) => code.append(ghostRow(g, r.gm?.[paired + j], null, "")));
-    } else if (state.showGhosts) {
-      ghosts.forEach((g, j) => {
+    if (state.changes !== "added") {
+      const ghosts = r.g ?? [];
+      for (let j = pairedCounts.get(k) ?? 0; j < ghosts.length; j++) {
+        const g = ghosts[j];
         const next = rows.slice(k).find((x) => x.k === "chg" && x.was === g);
-        code.append(ghostRow(g, r.gm?.[j], next ? hlOld(next) : null));
-      });
+        code.append(ghostRow(g, r.gm?.[j], next ? hlOld(next) : null, split, `${pi}:${r.n}:${j}`));
+        showsChanges = true;
+      }
     }
-    if (!r.n) continue;
+    if (!diffRowVisible(r)) continue;
     if (inTry) {
       code.append(tryBox(s, p));
       continue;
     }
-    const notes = state.showNotes ? (r.notes ?? []).filter((i) => !shown.has(i) && noteVisible(s, s.notes[i])) : [];
-    const allNotes = state.showNotes ? (r.notes ?? []).filter((i) => noteVisible(s, s.notes[i])) : [];
+    if (r.k) showsChanges = true;
+    const allNotes = (r.notes ?? []).filter((i) => noteCardVisible(s, s.notes[i]));
+    const notes = allNotes.filter((i) => !shown.has(i));
     const sel = state.sel && state.sel.station === s.id && state.sel.part === pi && state.sel.line === line;
     const blk = inBlock(s.id, pi, line);
     const [cm, ccls] = covMarks[r.cov] ?? ["", ""];
@@ -967,13 +1065,15 @@ function codeRows(s, pi, from, to, opts = {}) {
     let left = "";
     if (split) {
       const pl = pairedLeft.get(r.n);
-      left = `<span class="src left">${pl ? renderSpans(untab(pl.text), state.query, pl.hl ? { ranges: [pl.hl], open: '<span class="del-hl">', close: "</span>" } : null) : r.k === "add" || r.k === "chg" ? "" : src}</span>`;
+      const text = pl ? renderSpans(untab(pl.text), state.query, pl.hl ? { ranges: [pl.hl], open: '<span class="del-hl">', close: "</span>" } : null) :
+        r.k === "add" || r.k === "chg" ? "" : src;
+      left = `<span class="src left"${pl ? ` data-ghost="${pl.address}"` : ""}>${text}</span>`;
     }
     const badge = allNotes.length ? `<span class="nb k-${esc(noteStyle(s.notes[allNotes[0]])[2])}${allNotes.includes(state.note) ? " on" : ""}">${allNotes[0] + 1}${allNotes.length > 1 ? "+" : ""}</span>` : "";
     const moved = r.mv ? " moved" : "";
     const row = el(`<div class="row ${r.k ?? ""}${moved}${notes.length ? " has-note" : ""}${sel ? " sel" : ""}${blk ? " blk" : ""}${dim ? " dim" : ""}" data-part="${pi}" data-line="${line}"${r.mv ? ` title="moved here unchanged from ${esc(r.mv)}"` : ""}>
       <span class="mark">${r.mv ? "→" : ""}</span><span class="cov ${ccls}" title="${r.cov === "run" ? `${r.tn} tests run this line · click lists them (t)` : r.cov === "missed" ? "changed, and no test runs it" : ""}">${cm}</span>
-      <span class="ln" title="Comment or ask the agent">${badge}${r.n}</span>${left}<span class="src${split ? " right" : ""}">${src}</span></div>`);
+      <span class="ln" title="Comment or ask the agent">${badge}${r.n}</span>${left}<span class="src${split ? " right" : ""}">${split && p.base ? "" : src}</span></div>`);
     if (r.cov === "run") {
       const cv = row.querySelector(".cov");
       cv.onmouseenter = async () => {
@@ -1027,6 +1127,9 @@ function codeRows(s, pi, from, to, opts = {}) {
     const cp = state.compose;
     if (cp && cp.station === s.id && cp.part === pi && cp.line === line) code.append(composer(s, p));
   }
+  if (state.changes !== "all" && !showsChanges && (p.diffed || p.base || p.newFile) && !p.background) {
+    code.append(el(`<p class="muted small part-about">No ${state.changes} lines in this section.</p>`));
+  }
   return scroll;
 }
 
@@ -1043,7 +1146,7 @@ function partTitle(s, pi, p) {
   if (state.whole[k]) bits.push("whole file");
   else if (state.expand[k]) bits.push(`${state.expand[k]} more lines around changes`);
   if (p.background) bits.push("background, read first");
-  else if (!p.err && !blind(s) && !s.auto && !s.notes.some((n) => n.part === pi)) bits.push(`<span class="m-chg">no agent notes, read it yourself</span>`);
+  else if (!p.err && !cardsHidden(s) && !s.auto && !s.notes.some((n) => n.part === pi)) bits.push(`<span class="m-chg">no agent notes, read it yourself</span>`);
   return bits.map((b) => (b.startsWith("<") ? b : esc(b))).join(" · ");
 }
 
@@ -1058,7 +1161,7 @@ function partBox(s, pi, from, to, title, opts = {}) {
   const wholeShown = start === 0 && end >= p.len - 1 && !folded;
   const tryStart = opts.step ? from : s.parts[pi].start;
   const tryEnd = opts.step ? to : s.parts[pi].end;
-  const changes = p.base || p.err ? [] : p.rows.filter((r) => r.n && r.n - 1 >= tryStart && r.n - 1 <= tryEnd && (r.k === "add" || r.k === "chg"));
+  const changes = p.base || p.err || state.changes === "deleted" ? [] : p.rows.filter((r) => r.n && r.n - 1 >= tryStart && r.n - 1 <= tryEnd && (r.k === "add" || r.k === "chg"));
   const part = el(`<section class="part${p.background ? " bgpart" : ""}">
     <div class="part-head"><span class="file">${esc(title ?? p.file)}</span><span class="label">${title ? (p.baseFile ? "renamed from " + esc(p.baseFile) : "") : partTitle(s, pi, p)}</span>
     <span class="spacer"></span>
@@ -1222,7 +1325,7 @@ export function focusNote(i) {
       renderStation();
     }
   }
-  if (n && n.part >= 0) {
+  if (n && n.part >= 0 && lineVisible(s, n.part, n.line)) {
     state.sel = { station: s.id, part: n.part, line: n.line };
     $$("#station .row.sel, #station .kcur").forEach((r) => r.classList.remove("sel", "kcur"));
     document.querySelector(`#station .row[data-part="${n.part}"][data-line="${n.line}"]`)?.classList.add("sel");
@@ -1239,13 +1342,13 @@ export function focusNote(i) {
 function stepNote(dir) {
   const s = cur();
   if (!s) return;
-  const order = s.notes.map((n, i) => [n, i]).filter(([n]) => noteVisible(s, n)).sort(([a], [b]) => a.part - b.part || a.line - b.line).map(([, i]) => i);
+  const order = s.notes.map((n, i) => [n, i]).filter(([n]) => navigableNote(s, n)).sort(([a], [b]) => a.part - b.part || a.line - b.line).map(([, i]) => i);
   const at = order.indexOf(state.note);
   const next = at < 0 ? (dir > 0 ? 0 : order.length - 1) : at + dir;
   if (next >= 0 && next < order.length) return focusNote(order[next]);
   for (let si = state.station + dir; si >= 0 && si < state.view.stations.length; si += dir) {
     const t = state.view.stations[si];
-    const vis = t.notes.map((n, i) => [n, i]).filter(([n]) => noteVisible(t, n)).sort(([a], [b]) => a.part - b.part || a.line - b.line);
+    const vis = t.notes.map((n, i) => [n, i]).filter(([n]) => navigableNote(t, n)).sort(([a], [b]) => a.part - b.part || a.line - b.line);
     if (!vis.length) continue;
     goStation(si);
     return focusNote(dir > 0 ? vis[0][1] : vis[vis.length - 1][1]);
@@ -1309,7 +1412,7 @@ function stopText(s) {
   }
   for (const p of s.parts) if (p.about?.trim() && (p.hunk ?? 0) <= 1) blocks.push(base(p.file) + " · " + p.label + ": " + p.about.trim());
   s.notes.forEach((n, i) => {
-    if (noteVisible(s, n) && !reader().dismissed.includes(n.key)) blocks.push(noteText(s, i).trimEnd());
+    if (noteCardVisible(s, n) && !reader().dismissed.includes(n.key)) blocks.push(noteText(s, i).trimEnd());
   });
   return blocks.join("\n\n") + "\n";
 }
@@ -1325,7 +1428,7 @@ async function copy(text, what) {
 
 function yank(all) {
   const s = cur();
-  if (blind(s)) return toast("The notes are hidden on this stop until you reveal them (v).");
+  if (cardsHidden(s)) return toast("Reveal notes on this stop first (v).");
   if (all) {
     if (s.kind !== "code") return toast("Y copies a code stop; open one first.");
     return copy(stopText(s), "stop " + s.id);
@@ -1583,6 +1686,7 @@ function updateDiscussionControls() {
     bar.querySelector("[data-next-ask]").disabled = !canAsk || discussionBusy;
     bar.querySelector("[data-next-reply]").disabled = !canReply || discussionBusy;
   }
+  toolbarOverflow.schedule();
 }
 
 function syncDiscussionUI() {
@@ -1658,12 +1762,16 @@ function nextDiscussion(replies) {
   if (q) return jumpDiscussion(state.view.path, q.id, replies);
 }
 
-function beginDiscussionAction() {
-  if (discussionBusy) return false;
+function allowReviewViewChange() {
   if (state.compose?.text.trim() || state.compose?.pending || (state.editing && state.editing.text !== state.editing.was) || state.trying || hasAnswerDraft()) {
-    toast("Save or cancel your current edit before jumping.");
+    toast("Save or cancel your current edit first.");
     return false;
   }
+  return true;
+}
+
+function beginDiscussionAction() {
+  if (discussionBusy || !allowReviewViewChange()) return false;
   discussionBusy = true;
   updateDiscussionControls();
   return true;
@@ -1694,6 +1802,7 @@ async function jumpDiscussion(review, id, reply, turnID) {
       const s = view.stations[i];
       const part = s.parts[q.part];
       const last = q.kind === "diff" ? questionLastLine(q) : q.at;
+      if (part && state.changes !== "all" && (!lineVisible(s, q.part, q.at) || !lineVisible(s, q.part, last))) state.changes = "all";
       const step = guided() && part ? stepOf(s, q.part, last) : 0;
       const before = step < 0 ? stepOf(s, q.part, part.start) : step;
       await goStation(i, -1, Math.max(0, before));
@@ -2073,6 +2182,10 @@ function openComposer(station, part, line, opts = {}) {
   const from = opts.from ?? line, end = opts.end ?? line;
   const anchor = questionSelection(p.viewVersion === state.view.version ? p : s.parts[part], from, end);
   if ((reselect || opts.mode === "ask") && !anchor) return toast("Wait for the selected code to reload, then choose Ask again.");
+  if (state.changes !== "all" && !lineVisible(s, part, line)) {
+    state.changes = "all";
+    renderToolbar();
+  }
   state.sel = { station, part, line };
   const mode = reselect ? "ask" : opts.mode ?? (opts.answers ? "answer" : "comment");
   if (!keep || reselect) {
@@ -2301,7 +2414,6 @@ function stepOf(s, part, line) {
 }
 
 function stepNotes(s, st) {
-  if (blind(s)) return [];
   if (st.kind === "mech") return (st.subs ?? []).flatMap((x) => stepNotes(s, x));
   if (st.from < 0) return [];
   const end = stepEnd(s, st);
@@ -2510,16 +2622,13 @@ function blockStep(body, s, st) {
     return;
   }
   body.append(partBox(s, st.part, st.from, stepEnd(s, st), st.title, { about: showAbout, step: true, shown }));
-  if (blind(s)) {
-    const b = el(`<p class="m-chg">Your pass first: the agent's notes stay hidden on this high-risk stop. Decide what you think, then reveal them to compare. <button class="small">Reveal notes (v)</button></p>`);
-    b.querySelector("button").onclick = reveal;
-    body.append(b);
-  } else if (!notes.length && !s.auto && st.kind === "change") {
+  if (cardsHidden(s)) body.append(revealNoteCards());
+  else if (!notes.length && !s.auto && st.kind === "change") {
     const hasNotes = s.notes.some((n) => stepShows(s, st, n.part, n.line));
     body.append(el(`<p class="muted">${hasNotes ? "No notes match this filter for this step." : "The agent left no note on this change, so read it on your own."}</p>`));
   }
-  const left = notes.filter((i) => !shown.has(i));
-  if (left.length && state.showNotes) {
+  const left = notes.filter((i) => !shown.has(i) && navigableNote(s, s.notes[i]));
+  if (left.length) {
     const l = el(`<div class="loose"></div>`);
     left.forEach((i) => l.append(noteCard(s, s.notes[i], i, { static: true })));
     body.append(l);
@@ -2533,7 +2642,7 @@ function blockStep(body, s, st) {
 
 function stepQuestion(s, st, notes) {
   const c = s.parts[st.part]?.check?.trim();
-  if (c && !blind(s)) return oneLine(c);
+  if (c) return oneLine(c);
   const kinds = new Set(notes.map((i) => s.notes[i].kind));
   if (kinds.has("issue")) return "The agent sees a problem here. Do you agree? ? agrees and flags it, x dismisses it.";
   if (kinds.has("decide")) return "There is a call to make here. Decide, then tick it.";
@@ -2604,11 +2713,7 @@ function settleRow(s, n, i, where = "") {
 function wrapStep(body, s) {
   const rd = reader();
   body.append(el(`<h2>End of stop: ${esc(s.title)}</h2>`));
-  if (blind(s)) {
-    const b = el(`<p class="m-chg">The agent's notes are still hidden. Reveal them to compare with what you found, before you decide. <button class="small">Reveal notes (v)</button></p>`);
-    b.querySelector("button").onclick = reveal;
-    body.append(b);
-  }
+  if (cardsHidden(s)) body.append(revealNoteCards());
   body.append(el(`<div class="checks"><h4>You should be able to answer</h4><ul>${(s.checksAll ?? []).map((c) => `<li>${prose(c)}</li>`).join("")}</ul></div>`));
   const open = s.notes.map((n, i) => [n, i]).filter(([n]) => noteVisible(s, n) && !rd.dismissed.includes(n.key) && (
     (n.kind === "decide" && !rd.reviewed.includes(n.key)) ||
@@ -2731,18 +2836,14 @@ function renderWhole(box, s) {
     box.append(c);
   }
   aroundSection(box, s);
-  if (blind(s)) {
-    const b = el(`<p class="m-chg">Your pass first: the agent's notes stay hidden on this high-risk stop. Decide what you think, then reveal them to compare. <button class="small">Reveal notes (v)</button></p>`);
-    b.querySelector("button").onclick = reveal;
-    box.append(b);
-  }
+  if (cardsHidden(s)) box.append(revealNoteCards());
   const shown = new Set();
   s.parts.forEach((p, pi) => {
     const d = partData(s, pi);
     box.append(partBox(s, pi, d.start, d.end, null, { shown }));
   });
-  const loose = s.notes.map((n, i) => [n, i]).filter(([n, i]) => !shown.has(i) && noteVisible(s, n) && n.part < 0);
-  if (loose.length && state.showNotes) {
+  const loose = s.notes.map((n, i) => [n, i]).filter(([n, i]) => !shown.has(i) && noteCardVisible(s, n) && n.part < 0);
+  if (loose.length) {
     const l = el(`<div class="loose"><h4>Notes without an anchor</h4></div>`);
     loose.forEach(([n, i]) => l.append(noteCard(s, n, i, { static: true })));
     box.append(l);
@@ -2843,7 +2944,7 @@ function renderOverview(box) {
     ov.append(g);
   }
   const focus = [];
-  v.stations.forEach((s, si) => s.notes.forEach((nn, ni) => nn.focus && !rd.dismissed.includes(nn.key) && focus.push([nn, s, si, ni])));
+  v.stations.forEach((s, si) => s.notes.forEach((nn, ni) => nn.focus && noteCardVisible(s, nn) && !rd.dismissed.includes(nn.key) && focus.push([nn, s, si, ni])));
   if (focus.length) {
     const f = el(`<div><h3>Focus areas · F filters by them</h3></div>`);
     focus.sort(([a], [b]) => a.focus.localeCompare(b.focus));
@@ -3491,7 +3592,7 @@ function untested() {
   state.view.stations.forEach((s, si) => {
     if (s.kind !== "code") return;
     s.parts.forEach((_, pi) => {
-      for (const r of partData(s, pi).rows) if (r.cov === "missed") out.push({ si, pi, line: r.n - 1 });
+      for (const r of partData(s, pi).rows) if (diffRowVisible(r) && r.cov === "missed") out.push({ si, pi, line: r.n - 1 });
     });
   });
   return out;
@@ -3500,7 +3601,7 @@ function untested() {
 function nextUntested(dir) {
   if (!state.view.coverage) return toast("No coverage yet: ask the agent to run margin coverage.");
   const hs = untested();
-  if (!hs.length) return toast("A test runs every measured changed line.");
+  if (!hs.length) return toast(state.changes === "all" ? "A test runs every measured changed line." : "No visible untested lines.");
   const [idx, wrapped] = pick(hs, dir);
   jump(hs[idx]);
   toast(`Untested line ${idx + 1} of ${hs.length}${wrapped}`);
@@ -3511,7 +3612,7 @@ function nextUntested(dir) {
 function findHit(test) {
   for (let si = 0; si < state.view.stations.length; si++) {
     const s = state.view.stations[si];
-    for (let pi = 0; pi < s.parts.length; pi++) for (const r of partData(s, pi).rows) if (r.n && test(s, pi, r)) return { si, pi, line: r.n - 1 };
+    for (let pi = 0; pi < s.parts.length; pi++) for (const r of partData(s, pi).rows) if (diffRowVisible(r) && test(s, pi, r)) return { si, pi, line: r.n - 1 };
   }
   return null;
 }
@@ -3520,22 +3621,28 @@ function hits() {
   const q = state.query;
   if (!q) return [];
   const fold = q === q.toLowerCase();
+  const matches = (text) => (fold ? text.toLowerCase() : text).includes(q);
   const out = [];
   state.view.stations.forEach((s, si) => {
     s.parts.forEach((_, pi) => {
-      for (const r of partData(s, pi).rows) {
-        if (!r.n) continue;
-        const t = (r.s ?? []).map((x) => x.t).join("");
-        if ((fold ? t.toLowerCase() : t).includes(q)) out.push({ si, pi, line: r.n - 1 });
+      const part = partData(s, pi);
+      for (const r of part.rows) {
+        const line = r.n ? r.n - 1 : Math.max(0, part.len - 1);
+        if (state.changes !== "added") {
+          (r.g ?? []).forEach((text, index) => {
+            if (matches(untab(text))) out.push({ si, pi, line, ghost: `${pi}:${r.n}:${index}`, order: r.n ? index - r.g.length : index + 1 });
+          });
+        }
+        if (diffRowVisible(r) && matches((r.s ?? []).map((x) => x.t).join(""))) out.push({ si, pi, line });
       }
     });
   });
   return out;
 }
 
-function pick(hs, dir) {
-  const here = { si: state.station, pi: state.sel?.part ?? -1, line: state.sel?.line ?? -1 };
-  const before = (a, b) => a.si - b.si || a.pi - b.pi || a.line - b.line;
+function pick(hs, dir, here = { si: state.station, pi: state.sel?.part ?? -1, line: state.sel?.line ?? -1 }) {
+  const before = (a, b) => a.si - b.si || a.pi - b.pi || a.line - b.line ||
+    (a.order ?? 0) - (b.order ?? 0);
   if (dir > 0) {
     const i = hs.findIndex((h) => before(h, here) > 0);
     return i >= 0 ? [i, ""] : [0, " (wrapped)"];
@@ -3554,13 +3661,22 @@ function jump(h) {
       renderStation();
     }
   }
-  if (!document.querySelector(`#station .row[data-part="${h.pi}"][data-line="${h.line}"]`)) {
+  const target = () => h.ghost ? $(`#station [data-ghost="${h.ghost}"]`) : rowAt(h.pi, h.line);
+  if (!target()) {
     const p = partData(s, h.pi);
     p.folds = (p.folds ?? []).filter((f) => h.line < f.start || h.line > f.end);
     renderKeepScroll();
   }
-  selectRow(s.id, h.pi, h.line, false);
-  const row = document.querySelector(`#station .row[data-part="${h.pi}"][data-line="${h.line}"]`);
+  const row = target();
+  if (h.ghost) {
+    state.sel = null;
+    state.block = null;
+    state.note = -1;
+    row?.classList.add("kcur");
+    renderStatus();
+  } else if (row) {
+    selectRow(s.id, h.pi, h.line, false);
+  }
   row?.scrollIntoView({ block: "center" });
   row?.querySelector("mark")?.scrollIntoView({ block: "nearest", inline: "center" });
 }
@@ -3572,7 +3688,8 @@ function searchNext(dir, fromInput = false) {
     renderKeepScroll();
     return toast(`No match for “${state.query}”.`);
   }
-  const [idx, wrapped] = pick(hs, dir);
+  const ghost = $("#station .kcur[data-ghost]")?.dataset.ghost;
+  const [idx, wrapped] = pick(hs, dir, ghost ? hs.find((h) => h.si === state.station && h.ghost === ghost) : undefined);
   renderKeepScroll();
   jump(hs[idx]);
   toast(`Match ${idx + 1} of ${hs.length}${wrapped} · n next · N previous · esc ends`);
@@ -3581,6 +3698,7 @@ function searchNext(dir, fromInput = false) {
 
 function endSearch() {
   state.query = "";
+  search.value = "";
   renderToolbar();
   renderKeepScroll();
 }
@@ -3591,13 +3709,14 @@ function nextFresh() {
   for (let k = 0; k < count; k++) {
     const si = (state.station + k) % count;
     const s = state.view.stations[si];
-    const i = s.notes.findIndex((n, idx) => state.fresh.has(n.key) && (si !== state.station || idx !== state.note));
+    const i = s.notes.findIndex((n, idx) => state.fresh.has(n.key) && navigableNote(s, n) && (si !== state.station || idx !== state.note));
     if (i >= 0) {
       if (si !== state.station) goStation(si, i);
       else focusNote(i);
       return;
     }
   }
+  toast("No new visible notes.");
 }
 
 // Filters, blind mode
@@ -3618,8 +3737,14 @@ function setNoteFilter(filter) {
 
 function reveal() {
   const s = cur();
-  if (!blind(s)) return toast("Notes are already shown.");
-  act("Reveal", s.id).then((ok) => ok && toast("Notes shown; compare them with what you found."));
+  if (!cardsHidden(s)) return toast("Choose Hide to reveal note cards one stop at a time.");
+  act("Reveal", s.id).then((ok) => ok && toast("Note cards shown on this stop."));
+}
+
+function revealNoteCards() {
+  const prompt = el('<p class="m-chg">Note cards are hidden on this stop. <button type="button" class="small">Reveal notes (v)</button></p>');
+  prompt.querySelector("button").onclick = reveal;
+  return prompt;
 }
 
 // GitHub: the reader posts their own comments to the pull request, one at a time or as one review.
@@ -3848,6 +3973,7 @@ function jumpToLine(station, file, line, base) {
   if (si < 0) return;
   const s = state.view.stations[si];
   const pi = s.parts.findIndex((p) => p.file === file && !!p.base === base && line - 1 >= p.start && line - 1 <= p.end);
+  if (pi >= 0 && state.changes !== "all" && !lineVisible(s, pi, line - 1)) state.changes = "all";
   goStation(si, -1, pi >= 0 && guided() ? Math.max(stepOf(s, pi, line - 1), 0) : 0);
   if (pi >= 0) {
     selectRow(s.id, pi, line - 1, false);
@@ -4119,9 +4245,9 @@ async function openExport() {
 const helpKeys = [
   ["Walk", [["space", "next step; at the end of a stop, the next stop"], ["b", "previous step"], ["w", "switch between step by step and the full view"], ["e", "more of the stop card or overview; on a draft comment, edit it"], ["y n ?", "answer the orient question (overview)"]]],
   ["Move", [["} {", "next / previous stop"], ["] [", "next / previous note"], ["j k", "move the selected line"], ["J K shift+click", "select a block of lines"], ["ctrl+d ctrl+u", "half a page down / up"], ["g G", "top / bottom"], ["h l 0", "scroll code sideways / back"], ["N", "next new note (or previous match)"], ["L", "follow the note the selected note mentions (stop:n); again for the next one"], ["ctrl+o", "back to where you followed a mention from"]]],
-  ["Judge", [["1 2 3", "verdict: looks good / needs changes / not sure"], ["space", "mark the selected note read in the full view"], ["?", "agree with the selected problem"], ["P", "ask the agent to fix the problems you agreed with and the stops that need changes"], ["x", "dismiss the selected note"], ["enter", "tick the selected call"], ["v", "reveal notes in blind mode"]]],
+  ["Judge", [["1 2 3", "verdict: looks good / needs changes / not sure"], ["space", "mark the selected note read in the full view"], ["?", "agree with the selected problem"], ["P", "ask the agent to fix the problems you agreed with and the stops that need changes"], ["x", "dismiss the selected note"], ["enter", "tick the selected call"], ["v", "reveal note cards on this stop"]]],
   ["Talk", [["c", "comment on the selected line (draft); Edit on its card rewords it"], ["S", "send all drafts to the agent"], ["A", "the agent's answers to your comments: read, edit, reply"], ["a", "ask the agent about the selected line"], ["y Y", "copy the note / the whole stop"], ["`", "focus the agent terminal; ctrl+esc leaves it"]]],
-  ["See", [["/", "search; n N next / previous"], ["F", "filter notes"], ["n", "show or hide notes"], ["d", "removed lines"], ["s", "side by side"], ["z", "fold unchanged code"], ["+ -", "more / less context on the selected part"], ["f", "whole file of the selected part"], ["t", "tests that run the selected line"], ["T", "run them (the stop's tests when no line is selected)"], ["i", "try a change to the selected line or block: edit or delete it, its tests run against that, then it is put back"], ["o", "show or hide the test output"], ["u U", "next / previous untested change"], ["esc", "end search or spotlight, close an overlay"], ["r", "reload"], ["\\", "show or hide the sidebar"], ["ctrl+k", "go to a repository, worktree, branch or review"], ["ctrl+,", "settings"]]],
+  ["See", [["/", "search; n N next / previous"], ["F", "filter notes by kind or focus"], ["n", "cycle note visibility"], ["d", "cycle added, deleted, and all changes"], ["s", "switch between inline and split"], ["z", "fold unchanged code"], ["+ -", "more / less context on the selected part"], ["f", "whole file of the selected part"], ["t", "tests that run the selected line"], ["T", "run them (the stop's tests when no line is selected)"], ["i", "try a change to the selected line or block: edit or delete it, its tests run against that, then it is put back"], ["o", "show or hide the test output"], ["u U", "next / previous untested change"], ["esc", "end search or spotlight, close an overlay"], ["r", "reload"], ["\\", "show or hide the sidebar"], ["ctrl+k", "go to a repository, worktree, branch or review"], ["ctrl+,", "settings"]]],
 ];
 
 function openHelp() {
@@ -4196,17 +4322,17 @@ export function reviewKey(e) {
     0: () => $$("#station .code-scroll").forEach((x) => (x.scrollLeft = 0)),
     y: () => (ov ? orient("yes") : yank(false)),
     Y: () => yank(true),
-    n: () => (ov ? orient("no") : state.query ? searchNext(1) : toggle("showNotes")),
+    n: () => (ov ? orient("no") : state.query ? searchNext(1) : cycleToolbarChoice(noteVisibilityButtons)),
     N: () => (state.query ? searchNext(-1) : nextFresh()),
     "?": () => (ov ? orient("unsure") : noteMark("flagged")),
     x: xKey,
     Enter: activate,
     v: reveal,
     F: cycleFilter,
-    d: () => toggle("showGhosts"),
-    s: () => toggle("split"),
+    d: () => cycleToolbarChoice(changeButtons),
+    s: () => setSplit(!state.split),
     z: () => guided() ? toast(`Switch to ${fullDisplayLabel()} to fold unchanged code.`) : toggle("unfold"),
-    "/": () => document.querySelector("#search")?.focus(),
+    "/": toolbarOverflow.focusSearch,
     Escape: () => {
       if (state.query) return endSearch();
       if (state.spot >= 0) return endSpot();
@@ -4334,7 +4460,7 @@ function captureReadingOrigin() {
     const key = partKey(s, i);
     return { file: p.file, base: !!p.base, from: p.start, extra: state.expand[key] ?? 0, whole: !!state.whole[key] };
   });
-  return { ...readingPosition(s), path: state.view.path, full: reader().full, positions,
+  return { ...readingPosition(s), path: state.view.path, full: reader().full, changes: state.changes, positions,
     sel: state.sel?.station === s.id ? { ...state.sel } : null,
     block: state.block?.station === s.id ? { ...state.block } : null,
     note: s.notes[state.note]?.key,
@@ -4349,6 +4475,7 @@ async function backToReading() {
     closeModal();
     hooks.showReviewer();
     activeThread = "";
+    state.changes = origin.changes;
     if (reader().full !== origin.full) await act("SetFull", origin.full);
     const s = state.view.stations.find((station) => station.id === origin.station);
     const matches = (i) => {
@@ -4449,8 +4576,7 @@ function viewHint() {
   if (guided() && s.kind !== "code") return `space next · w ${fullDisplayLabel()} · `;
   if (s.kind !== "code") return "";
   if (walking()) return `space next · b back · e more · w ${fullDisplayLabel()} · `;
-  if (state.split) return "s one column · ";
-  return state.showGhosts ? "d hide removed · s side by side · " : "d show removed · s side by side · ";
+  return state.view.hasBase ? `d cycle changes · s ${state.split ? "inline" : "split"} · ` : "";
 }
 
 function cursorCoverage() {
@@ -4475,7 +4601,6 @@ export function renderStatus() {
   if (c.draft_comments) pills.push(`<span class="pill p-draft">✎ ${plural(c.draft_comments, "draft", "drafts")} · S sends</span>`);
   if (c.to_fix) pills.push(`<span class="pill p-issue">⚑ ${c.to_fix} to fix · P sends</span>`);
   if (c.open_questions) pills.push(`<span class="pill m-chg">${c.open_questions} waiting for the agent</span>`);
-  if (cur()?.kind === "code" && !state.showGhosts && !state.split) pills.push(`<span class="pill p-info">removed lines hidden</span>`);
   if (state.query) pills.push(`<span class="pill p-match">/${esc(state.query)} · n N · esc</span>`);
   const [p, warn] = pace();
   pills.push(`<span class="pill${warn ? " m-chg" : " muted"}">${esc(p)}</span>`);
@@ -4504,13 +4629,19 @@ export function moveCursor(dir, jumpTo, extend) {
     at = items.findIndex((r) => state.sel && r.dataset.line !== undefined && state.sel.station === s.id && +r.dataset.part === state.sel.part && +r.dataset.line === state.sel.line);
   }
   let next = jumpTo === "first" ? 0 : jumpTo === "last" ? items.length - 1 : at < 0 ? (dir > 0 ? 0 : items.length - 1) : Math.max(0, Math.min(items.length - 1, at + dir));
-  items.forEach((x) => x.classList.remove("kcur"));
+  $$("#station .kcur").forEach((x) => x.classList.remove("kcur"));
   const it = items[next];
   releaseDisclosureFocus(it);
   if (it.dataset.line !== undefined) {
     selectRow(cur().id, +it.dataset.part, +it.dataset.line, false, extend);
   } else {
     $$("#station .row.sel").forEach((r) => r.classList.remove("sel"));
+    if (it.matches(".ghost")) {
+      state.sel = null;
+      state.block = null;
+      state.note = -1;
+      markBlock();
+    }
     it.classList.add("kcur");
   }
   it.scrollIntoView({ block: "nearest" });
@@ -4531,7 +4662,7 @@ function activate() {
   const s = cur();
   if (state.sel?.station === s.id) {
     const r = partData(s, state.sel.part)?.rows.find((x) => x.n - 1 === state.sel.line);
-    const first = (r?.notes ?? []).find((i) => noteVisible(s, s.notes[i]));
+    const first = (r?.notes ?? []).find((i) => navigableNote(s, s.notes[i]));
     if (first !== undefined) return focusNote(first);
   }
 }

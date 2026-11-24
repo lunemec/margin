@@ -291,6 +291,66 @@ func TestContinueWalkthroughWaitsForReader(t *testing.T) {
 	}
 }
 
+func TestReviewNoteVisibility(t *testing.T) {
+	path, _ := prWalkFixture(t)
+	writeWalkReview(t, path, `stations:
+  - id: shipping
+    title: Select the priority route
+    risk: high
+    risk_why: Changing the route can disrupt shipping.
+    parts:
+      - file: route.txt
+        hunks: true
+    notes:
+      - at: route by priority
+        text: Confirm the priority.
+  - id: cleanup
+    title: Remove the old route
+    risk: low
+    parts:
+      - file: retired.txt
+        side: base
+        hunks: true
+    notes:
+      - at: legacy route
+        text: Remove the unused route.
+`)
+	r := &Reviews{path: path}
+	view, err := r.Current()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view.Reader.NoteVisibility != "all" || !walkStop(t, view, "shipping").Notes[0].HighRisk {
+		t.Fatal("guided review lost its default or high-risk note")
+	}
+	if update, err := r.SetBlind(true); err != nil || update.Reader.NoteVisibility != "hide" {
+		t.Fatalf("legacy blind setting did not become Hide: %v", err)
+	}
+	if update, err := r.SetNoteVisibility(path, "risky"); err != nil || update.Reader.NoteVisibility != "risky" || !update.Reader.Blind {
+		t.Fatalf("Risky was not saved independently of terminal blind mode: %v", err)
+	}
+	if _, err := r.SetNoteVisibility("another.review.yaml", "hide"); err == nil {
+		t.Fatal("the preference changed for the wrong review")
+	}
+	r = &Reviews{path: path}
+	view, err = r.SelectWalkthrough(path, fileWalk)
+	if err != nil {
+		t.Fatal(err)
+	}
+	route := walkStop(t, view, "file:route.txt")
+	retired := walkStop(t, view, "file:retired.txt")
+	if view.Reader.NoteVisibility != "risky" || !route.Notes[0].HighRisk || retired.Notes[0].HighRisk {
+		t.Fatalf("file grouping lost the saved mode or authored risk: %+v, %+v", route.Notes, retired.Notes)
+	}
+	if _, err := r.SetNoteVisibility(path, "hide"); err != nil {
+		t.Fatal(err)
+	}
+	update, err := r.Reveal("file:route.txt")
+	if err != nil || update.Reader.NoteVisibility != "hide" || !slices.Equal(update.Reader.Revealed, []string{"file:route.txt"}) {
+		t.Fatalf("reveal did not stay on one stop: %+v, %v", update, err)
+	}
+}
+
 func TestWalkthroughSwitchReusesAndRefreshesSnapshot(t *testing.T) {
 	path, repo := prWalkFixture(t)
 	writeWalkReview(t, path, prWalkGrouped)

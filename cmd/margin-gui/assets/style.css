@@ -633,13 +633,26 @@ button.chip.chip-issue.on { background: var(--issue-tint); border-color: var(--i
 }
 @keyframes walkthrough-spin { to { transform: rotate(1turn); } }
 
-#toolbar { display: flex; align-items: flex-end; gap: 4px; padding: 5px 12px; border-bottom: 1px solid var(--line); background: var(--bg-1); flex: none; flex-wrap: wrap; }
+#toolbar { position: relative; display: flex; align-items: flex-end; gap: 4px; padding: 5px 12px; border-bottom: 1px solid var(--line); background: var(--bg-1); flex: none; min-width: 0; }
 #toolbar-actions { display: contents; }
+#toolbar [data-overflow], #toolbar-more { flex: none; }
+#toolbar button[data-overflow] { max-width: 16rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#toolbar-more { margin-left: auto; }
+#toolbar-more:not(.available) { position: absolute; right: 12px; visibility: hidden; }
+#toolbar-overflow {
+  position: absolute; z-index: 30; top: calc(100% + 4px); right: 8px;
+  display: flex; flex-direction: column; align-items: flex-start; gap: 6px;
+  width: max-content; max-width: calc(100% - 16px); max-height: min(65vh, 420px); overflow: auto;
+  padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg-1);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .22);
+}
+#toolbar-overflow[inert] { visibility: hidden; }
 #toolbar button, #note-filter, #toolbar input.search { min-height: 28px; font-family: var(--sans); font-size: 12px; line-height: 18px; }
 #toolbar button, #note-filter { padding: 3px 9px; }
 .toolbar-field { display: flex; flex-direction: column; gap: 2px; max-width: 100%; margin-right: 4px; }
 .toolbar-label { padding-left: 2px; font-size: 11px; color: var(--fg-dim); }
 .segments { display: inline-grid; grid-template-columns: 1fr 1fr; gap: 2px; padding: 0 2px; border-radius: 8px; background: var(--bg); }
+#changes-mode, #notes-visibility { grid-template-columns: repeat(3, 1fr); }
 .segments button { white-space: nowrap; background: transparent; border-color: transparent; color: var(--fg-dim); }
 .segments button:not([aria-disabled="true"]):hover { color: var(--fg); }
 .segments button[aria-pressed="true"] { background: var(--primary-bg); color: var(--on-primary); font-weight: 600; }
@@ -672,11 +685,11 @@ button.chip.chip-issue.on { background: var(--issue-tint); border-color: var(--i
   cursor: pointer;
 }
 #note-filter:hover { border-color: var(--fg-faint); }
-.segments button:focus-visible, #note-filter:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.segments button:focus-visible, #note-filter:focus-visible, #toolbar-more:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 button.tb { background: transparent; color: var(--fg-dim); }
 button.tb.on { color: var(--fg); background: var(--bg-3); border-color: var(--primary-line); }
 button.tb.warn { color: var(--warn-fg); border-color: var(--question); }
-input.search { margin-left: auto; width: 200px; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; color: var(--fg); padding: 3px 8px; outline: none; }
+input.search { width: 200px; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; color: var(--fg); padding: 3px 8px; outline: none; }
 input.search:focus { border-color: var(--accent); }
 mark { background: var(--search-bg); color: inherit; border-radius: 2px; }
 

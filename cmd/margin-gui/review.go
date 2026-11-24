@@ -229,6 +229,7 @@ type NoteView struct {
 	Q          string `json:"q,omitempty"`
 	QID        string `json:"qid,omitempty"`
 	Focus      string `json:"focus,omitempty"`
+	HighRisk   bool   `json:"highRisk,omitempty"`
 	Confidence string `json:"confidence,omitempty"`
 	Unbacked   bool   `json:"unbacked,omitempty"`
 	Part       int    `json:"part"`
@@ -413,10 +414,19 @@ func renderedWalkthrough(d *doc.Doc, walk walkthrough, snapshot *walkthroughSnap
 	}
 	v := viewOf(d, highlights)
 	if walk.mode == fileWalk {
+		highRisk := make(map[string]bool)
+		for _, stop := range walk.alternate.Stations {
+			if stop.Risk == "high" {
+				highRisk[stop.ID] = true
+			}
+		}
 		for i := range v.Stations {
 			for j := range v.Stations[i].Notes {
 				note := &v.Stations[i].Notes[j]
 				note.AuthoredRef = walk.noteRefs[note.Key]
+				if sep := strings.LastIndexByte(note.AuthoredRef, ':'); sep >= 0 {
+					note.HighRisk = highRisk[note.AuthoredRef[:sep]]
+				}
 			}
 		}
 	}
@@ -618,7 +628,7 @@ func stationOf(d *doc.Doc, st *doc.Station, hl map[string][][]render.Span) Stati
 	}
 	for _, n := range st.Notes {
 		sv.Notes = append(sv.Notes, NoteView{Key: n.Key, Kind: n.Level(), Text: n.Text, Evidence: n.Evidence, Q: n.Q, QID: n.QID, Focus: n.Focus,
-			Confidence: n.Confidence, Unbacked: n.Unbacked(), Part: n.Part, Line: n.Line, At: n.At, Problem: n.Problem, Changed: n.Changed, RefBy: n.RefBy})
+			Confidence: n.Confidence, HighRisk: st.Risk == "high", Unbacked: n.Unbacked(), Part: n.Part, Line: n.Line, At: n.At, Problem: n.Problem, Changed: n.Changed, RefBy: n.RefBy})
 	}
 	return sv
 }
