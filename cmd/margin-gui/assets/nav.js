@@ -646,7 +646,7 @@ export async function openSettings() {
       closeModal();
       if (changed && state.trying) renderKeepScroll();
       toast(persisted ? "Settings saved. New reviews and agents use them; open reviews stay where they are." : "Settings saved. The editor keybindings apply now, but could not be remembered for next launch.");
-      if (state.worktree) loadTargets();
+      if (!$("#home-pane").classList.contains("hidden")) refreshWorktree();
     } catch (e) {
       if (m.isConnected) toast(errText(e), true);
     } finally {

@@ -1254,7 +1254,8 @@ function stepNote(dir) {
 
 function selectedNote() {
   const s = cur();
-  return s?.notes[state.note];
+  const n = s?.notes[state.note];
+  return n && noteVisible(s, n) ? n : undefined;
 }
 
 function noteMark(mark) {
@@ -3607,9 +3608,12 @@ function cycleFilter() {
 }
 
 function setNoteFilter(filter) {
+  const article = $("#station");
+  const anchor = visibleCodeAnchor(article);
   state.filter = filter;
   toast("Showing " + filter);
   rerenderKeepScroll();
+  restoreCodeAnchor(article, anchor);
 }
 
 function reveal() {
