@@ -658,6 +658,9 @@ mark { background: var(--search-bg); color: inherit; border-radius: 2px; }
 .stepbar span { flex: 1; height: 5px; border-radius: 3px; background: var(--bg-3); cursor: pointer; }
 .stepbar span.done { background: var(--primary-line); }
 .stepbar span.now { background: var(--accent); }
+.stepbar span.note-match { box-shadow: inset 0 0 0 1px var(--accent); }
+.stepbar span.no-note-match.done { background: var(--bg-3); }
+.stepbar span.no-note-match.now { background: var(--fg-faint); }
 .walk { max-width: 1400px; }
 .wh { margin: 0 0 4px; font-size: 15px; }
 .card { display: grid; gap: 4px; margin: 10px 0 14px; max-width: 980px; background: var(--bg-2); border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; }
@@ -692,6 +695,8 @@ pre.flow { font: 12.5px/1.5 var(--mono); color: var(--flow); background: var(--b
 .route-row:hover { background: var(--bg-2); }
 .route-row.auto .rt { color: var(--del-mark); }
 .route-row .rn, .route-row .rl { font-family: var(--mono); font-size: 12px; color: var(--fg-faint); }
+.st.no-note-match .t, .st.no-note-match .meta > :not(.m-fresh),
+.route-row.no-note-match .rt, .route-row.no-note-match .rr { color: var(--nit); }
 .vdot.half { background: linear-gradient(90deg, var(--fg-dim) 50%, transparent 50%); }
 .m-fresh, .badge.fresh { color: var(--ink); background: var(--warn); border-radius: 9px; padding: 0 6px; font-size: 10.5px; }
 .note .badge.fresh { margin-left: 6px; }

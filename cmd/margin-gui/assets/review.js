@@ -570,6 +570,14 @@ function noteVisible(s, n) {
   return !!n.focus && "Focus: " + n.focus === state.filter;
 }
 
+function filteringNotes(s) {
+  return s.kind === "code" && state.filter !== "All notes" && !blind(s);
+}
+
+function stopHasNoMatchingNotes(s) {
+  return filteringNotes(s) && !s.notes.some((n) => noteVisible(s, n));
+}
+
 // Header, phases and the stop list
 
 export function renderReview() {
@@ -614,6 +622,10 @@ export function renderReview() {
     const visited = !vd && reader().visited.includes(s.id) && s.kind === "code";
     const item = el(`<div class="st${i === state.station ? " on" : ""}"><span class="num">${vd ? `<span class="vdot ${vd.cls}" title="${vd.label}"></span>` : visited ? `<span class="vdot half" title="visited"></span>` : num}</span>
       <span class="t">${esc(s.title || s.id)}</span><div class="meta">${meta.join("")}<span class="m-fresh hidden" data-reply-stop="${esc(s.id)}"></span></div></div>`);
+    if (stopHasNoMatchingNotes(s)) {
+      item.classList.add("no-note-match");
+      item.title = "No matching notes";
+    }
     item.onclick = () => goStation(i);
     nav.append(item);
   });
@@ -2341,20 +2353,26 @@ async function setReadingMode(full) {
 function progress(s) {
   const steps = s.steps;
   const st = steps[state.step];
-  const label = { brief: "what this stop is", background: "know this first", change: `change ${st.n} of ${st.of}`, mech: "housekeeping", wrap: "your verdict" }[st.kind];
+  let label = { brief: "what this stop is", background: "know this first", change: `change ${st.n} of ${st.of}`, mech: "housekeeping", wrap: "your verdict" }[st.kind];
   const [at, of] = codeStops();
   const box = el(`<div class="progress"></div>`);
-  box.append(phaseRow(2, `stop ${at} of ${of} · step ${state.step + 1} of ${steps.length} · ${label}`));
   const bar = el(`<div class="stepbar"></div>`);
+  const showMatches = filteringNotes(s);
   steps.forEach((x, i) => {
     const seg = el(`<span class="${i < state.step ? "done" : i === state.step ? "now" : ""}" title="${esc(x.kind === "change" ? `change ${x.n} of ${x.of}` : x.kind)}"></span>`);
+    if (showMatches && x.kind !== "brief" && x.kind !== "wrap") {
+      const matches = stepNotes(s, x).length > 0;
+      seg.classList.add(matches ? "note-match" : "no-note-match");
+      seg.title += matches ? " · Matching notes" : " · No matching notes";
+      if (!matches && i === state.step) label += " · no matching notes";
+    }
     seg.onclick = () => {
       state.step = i;
       enterStep();
     };
     bar.append(seg);
   });
-  box.append(bar);
+  box.append(phaseRow(2, `stop ${at} of ${of} · step ${state.step + 1} of ${steps.length} · ${label}`), bar);
   return box;
 }
 
@@ -2472,7 +2490,8 @@ function blockStep(body, s, st) {
     b.querySelector("button").onclick = reveal;
     body.append(b);
   } else if (!notes.length && !s.auto && st.kind === "change") {
-    body.append(el(`<p class="muted">The agent left no note on this change, so read it on your own.</p>`));
+    const hasNotes = s.notes.some((n) => stepShows(s, st, n.part, n.line));
+    body.append(el(`<p class="muted">${hasNotes ? "No notes match this filter for this step." : "The agent left no note on this change, so read it on your own."}</p>`));
   }
   const left = notes.filter((i) => !shown.has(i));
   if (left.length && state.showNotes) {
@@ -2780,6 +2799,10 @@ function renderOverview(box) {
       ${s.riskWhy ? `<div class="small risk-${esc(s.risk || "low")}">because ${esc(oneLine(s.riskWhy))}</div>` : ""}
       ${s.orderWhy ? `<div class="muted small">comes now: ${esc(oneLine(s.orderWhy))}</div>` : ""}
       <div class="muted small mono">${esc(stopMeta(s))}</div>${covLine(s) ? `<div class="small mono">${covLine(s)}</div>` : ""}</span></div>`);
+    if (stopHasNoMatchingNotes(s)) {
+      r.classList.add("no-note-match");
+      r.title = "No matching notes";
+    }
     r.onclick = () => goStation(i);
     route.lastElementChild.append(r);
   });

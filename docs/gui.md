@@ -100,7 +100,9 @@ with pictures. In short:
 - **Note filter.** **All notes** includes every kind of agent note. **Issues, questions & decisions**
   includes reported issues, questions, and decisions for you to make. **Issues with evidence**
   includes only issues that cite evidence. Choose a focus area to see notes tagged with that topic.
-  The filter stays selected when you switch grouping or display. Press `F` to cycle through the filters.
+  Specific filters dim files, stops and steps without matching notes. You can still open any of
+  them to read the code. The filter stays selected when you switch grouping or display. Press `F`
+  to cycle through the filters.
 - **Your side.** Comment on a line with `c` (pick a kind: issue, suggestion, question, nitpick,
   praise, thought; `!` makes it blocking). Comments are drafts until `S` sends them all to the
   agent; until then *Edit* on a draft (or `e`) rewords it. Ask the agent about a line with `a`. Mark notes read, agree with a problem (`?`), dismiss
