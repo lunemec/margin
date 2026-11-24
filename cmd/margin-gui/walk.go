@@ -3,12 +3,10 @@ package main
 import (
 	"errors"
 	"fmt"
-	"os"
-	"os/exec"
-	"strings"
 
 	"github.com/redrick/margin/internal/anchor"
 	"github.com/redrick/margin/internal/around"
+	"github.com/redrick/margin/internal/cli"
 	"github.com/redrick/margin/internal/doc"
 	"github.com/redrick/margin/internal/render"
 	"github.com/redrick/margin/internal/review"
@@ -16,6 +14,7 @@ import (
 	"github.com/redrick/margin/internal/state"
 	"github.com/redrick/margin/internal/text"
 	"github.com/redrick/margin/internal/tui"
+	"github.com/redrick/margin/internal/verdict"
 )
 
 type LineInput struct {
@@ -293,18 +292,19 @@ func (r *Reviews) RunTests(tests []int, file string, line int, needle string, ve
 
 // Export renders the reader's comments, flagged notes and calls with `margin export`, to post by hand.
 func (r *Reviews) Export(format string) (string, error) {
-	if format != "md" && format != "github" {
-		return "", fmt.Errorf("unknown format %q", format)
+	r.mu.Lock()
+	d, walk := r.loaded, r.walk
+	r.mu.Unlock()
+	if d == nil {
+		return "", errors.New("open a review first")
 	}
-	exe, err := os.Executable()
+	st, err := state.Load(review.StatePath(d.Review.Path))
 	if err != nil {
 		return "", err
 	}
-	cmd := exec.Command(exe, "export", "--review", r.current(), "--format", format)
-	cmd.Env = append(os.Environ(), "MARGIN_CLI=1")
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return "", fmt.Errorf("margin export: %v: %s", err, strings.TrimSpace(string(out)))
+	authored := d
+	if walk.mode == fileWalk {
+		authored = walk.alternate
 	}
-	return string(out), nil
+	return cli.FormatExport(format, authored, st, verdict.Recommend(d, st, walk.alternate))
 }

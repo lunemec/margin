@@ -146,6 +146,17 @@ A note that mentions another as `stop:n` (`resolve:2`: the second note of stop *
 `margin goto` takes) shows it as a link: click it, or press `L` on the selected note, to jump there,
 and `ctrl+o` to come back. The note it points at lists it under *Referenced by*.
 
+## Walkthrough views for pull requests
+
+A new pull request opens **File by file** so you can start reviewing immediately. When you start
+the agent, a progress bar stays visible while it groups the changes. Once the grouping is ready,
+choose **Keep reviewing by file** or **Open agent walkthrough**. The agent can keep adding notes
+and coverage after you choose.
+
+You can switch views anytime and Margin remembers your reading position in each. Agent notes with
+a matching line appear in both walkthroughs. **Step by step** and **Entire stop** control how you
+read the stops in either walkthrough.
+
 ## The agent
 
 *Start agent* runs the agent from [Settings](#settings) in a terminal under the review, in the

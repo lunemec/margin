@@ -1,0 +1,311 @@
+package main
+
+import (
+	"os"
+	"path/filepath"
+	"reflect"
+	"slices"
+	"strings"
+	"testing"
+
+	"github.com/redrick/margin/internal/cli"
+	"github.com/redrick/margin/internal/review"
+	"github.com/redrick/margin/internal/state"
+	"github.com/redrick/margin/internal/verdict"
+)
+
+func TestPRWalkthroughHandoff(t *testing.T) {
+	path, repo := prWalkFixture(t)
+	r := &Reviews{path: path}
+	view, err := r.Current()
+	if err != nil || view.Walkthrough.Mode != fileWalk || view.Walkthrough.Ready {
+		t.Fatalf("initial view = %+v, %v", view, err)
+	}
+	const fileID = "file:retired.txt"
+	deleted := walkStop(t, view, fileID)
+	if len(deleted.Parts) != 1 || !deleted.Parts[0].Base {
+		t.Fatalf("deleted file lost its base side: %+v", deleted.Parts)
+	}
+	filePosition := ReadingPosition{Station: fileID, Mode: fileWalk, Scroll: 125,
+		Step: &ReadingStep{Kind: "change", File: "retired.txt", Side: "base"}}
+	if err := r.SaveReadingPosition(path, filePosition, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.SetVerdict(fileID, verdict.Changes); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.AddComment(CommentInput{Station: fileID, Line: 0, Text: "Check the old route"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.SelectWalkthrough(path, agentWalk); err == nil {
+		t.Fatal("an unfinished walkthrough could be selected")
+	}
+
+	log, agent := testAgent(t, "review-agent")
+	t.Setenv("MARGIN_AGENT", agent)
+	a := &Agents{}
+	t.Cleanup(func() { _ = a.ServiceShutdown() })
+	if _, err := a.Start(path, repo, false, 80, 24); err != nil {
+		t.Fatal(err)
+	}
+	preparation := readReviewResume(path).WalkPreparation
+	prompt := strings.Join(waitAgentArgs(t, log), " ")
+	if preparation == "" || !strings.Contains(prompt, "walkthrough-ready") ||
+		!strings.Contains(prompt, preparation) || !strings.Contains(prompt, "--new") {
+		t.Fatalf("fake agent did not receive the preparation checkpoint: %q", prompt)
+	}
+	if !a.Running(path) || !a.ResumeStatus(path, repo).WalkAttempted {
+		t.Fatal("preparing agent was not visible")
+	}
+	publish := func(id string) error {
+		return markWalkthroughReady([]string{"--review", path, "--preparation", id})
+	}
+
+	partial := strings.Split(prWalkGrouped, "      - file: retired.txt")[0]
+	writeWalkReview(t, path, partial)
+	if err := publish(preparation); err == nil {
+		t.Fatal("an incomplete grouping was published")
+	}
+	view, err = r.Current()
+	if err != nil || view.Walkthrough.Ready || view.Walkthrough.Mode != fileWalk {
+		t.Fatalf("partial save changed the walkthrough: %+v, %v", view, err)
+	}
+	walkStop(t, view, fileID)
+	r.gotWalkPosition(t, path, filePosition)
+
+	running := a.session(path)
+	if err := a.Stop(path); err != nil {
+		t.Fatal(err)
+	}
+	waitAgentExit(t, running)
+	if a.Running(path) || !a.ResumeStatus(path, repo).WalkAttempted {
+		t.Fatal("stopped preparation lost its status")
+	}
+	if _, err := a.Start(path, repo, false, 80, 24); err != nil {
+		t.Fatal(err)
+	}
+	writeWalkReview(t, path, prWalkGrouped)
+	if err := publish(preparation); err == nil {
+		t.Fatal("a superseded agent published its walkthrough")
+	}
+	if err := publish(readReviewResume(path).WalkPreparation); err != nil {
+		t.Fatal(err)
+	}
+
+	// A restart before the reader answers the offer still opens the old view and position.
+	r = &Reviews{path: path, agents: a}
+	view, err = r.Current()
+	if err != nil || !view.Walkthrough.Ready || !view.Walkthrough.Offer || view.Walkthrough.Mode != fileWalk {
+		t.Fatalf("ready view = %+v, %v", view, err)
+	}
+	r.gotWalkPosition(t, path, filePosition)
+	view, err = r.SelectWalkthrough(path, fileWalk)
+	if err != nil || view.Walkthrough.Offer {
+		t.Fatalf("keep reviewing by file = %+v, %v", view, err)
+	}
+	view, err = r.SelectWalkthrough(path, agentWalk)
+	if err != nil || view.Walkthrough.Mode != agentWalk || view.Walkthrough.Position != nil {
+		t.Fatalf("first agent view = %+v, %v", view, err)
+	}
+	walkStop(t, view, "shipping")
+	comment := view.Reader.Comments[0]
+	if comment.Station != "shipping" || comment.Part != 1 || comment.At != 0 || !comment.Draft {
+		t.Fatalf("comment did not follow the deleted line: %+v", comment)
+	}
+	if view.Reader.Outcome.Decision != verdict.RequestChanges || view.Reader.Verdicts["shipping"] != "" || view.Reader.ToFix != 1 {
+		t.Fatalf("file verdict or fix request was lost or transferred to the grouped stop: %+v", view.Reader)
+	}
+	if _, err := r.SetVerdict("shipping", verdict.Good); err != nil {
+		t.Fatal(err)
+	}
+	for format, want := range map[string]string{"md": "Recommendation: request changes", "github": "REQUEST_CHANGES"} {
+		exported, err := r.Export(format)
+		if err != nil || !strings.Contains(exported, want) {
+			t.Fatalf("export %s lost the file verdict: %s, %v", format, exported, err)
+		}
+	}
+	if _, err := r.SendFixes(); err != nil {
+		t.Fatalf("send fix from the other walkthrough: %v", err)
+	}
+	agentPosition := ReadingPosition{Station: "shipping", Mode: agentWalk, Scroll: 42}
+	if err := r.SaveReadingPosition(path, agentPosition, true); err != nil {
+		t.Fatal(err)
+	}
+
+	writeWalkReview(t, path, prWalkGrouped+prWalkLateNote)
+	view, err = r.Current()
+	if err != nil {
+		t.Fatal(err)
+	}
+	note := walkStop(t, view, "shipping").Notes[0]
+	if _, err := r.MarkNote(note.Key, "reviewed"); err != nil {
+		t.Fatal(err)
+	}
+	view, err = r.SelectWalkthrough(path, fileWalk)
+	if err != nil {
+		t.Fatal(err)
+	}
+	projected := walkStop(t, view, fileID).Notes
+	if len(projected) != 1 || projected[0].Key != note.Key || !slices.Contains(view.Reader.Reviewed, note.Key) {
+		t.Fatalf("late note or its reader mark was lost: %+v", projected)
+	}
+	route := walkStop(t, view, "file:route.txt")
+	if len(route.Notes) != 1 || route.Notes[0].AuthoredRef != "shipping:2" ||
+		route.Notes[0].Part < 0 || !route.Parts[route.Notes[0].Part].Base {
+		t.Fatalf("a note on a removal inside a modified file lost its base anchor: %+v", route)
+	}
+	if c := view.Reader.Comments[0]; c.Station != fileID || c.Part != 0 || c.At != 0 {
+		t.Fatalf("draft did not return to its original line: %+v", c)
+	}
+	r.gotWalkPosition(t, path, filePosition)
+	if _, err := r.SendComments(); err != nil {
+		t.Fatal(err)
+	}
+	if code := cli.Run([]string{"resolve", "--review", path, "--no-goto", "c1", "Confirmed the old route is unused."}); code != 0 {
+		t.Fatalf("could not resolve a comment written in File by file: exit %d", code)
+	}
+	view, err = r.Current()
+	if err != nil || !view.Reader.Comments[0].Resolved {
+		t.Fatalf("the resolution was not visible in the file view: %+v, %v", view, err)
+	}
+
+	view, err = r.SelectWalkthrough(path, agentWalk)
+	if err != nil || !view.Reader.Comments[0].Resolved {
+		t.Fatalf("the resolution was not visible in the agent walkthrough: %+v, %v", view, err)
+	}
+	r.gotWalkPosition(t, path, agentPosition)
+}
+
+func TestLegacyPRWalkthroughRestoresItsPosition(t *testing.T) {
+	path, _ := prWalkFixture(t)
+	position := ReadingPosition{Station: "retired", Scroll: 12}
+	if err := updateReviewResume(path, func(saved *reviewResume) bool {
+		saved.Position = &position
+		return true
+	}); err != nil {
+		t.Fatal(err)
+	}
+	st, err := state.Load(review.StatePath(path))
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.Verdicts["retired"] = verdict.Good
+	if err := st.Save(); err != nil {
+		t.Fatal(err)
+	}
+	r := &Reviews{path: path}
+	view, err := r.Current()
+	if err != nil || view.Walkthrough.Mode != fileWalk || view.Reader.Verdicts["file:retired.txt"] != verdict.Good ||
+		view.Reader.Verdicts["retired"] != "" {
+		t.Fatalf("legacy file view = %+v, %v", view, err)
+	}
+	r.gotWalkPosition(t, path, ReadingPosition{Station: "file:retired.txt", Mode: fileWalk, Scroll: 12})
+
+	path, _ = prWalkFixture(t)
+	writeWalkReview(t, path, prWalkGrouped)
+	r = &Reviews{path: path}
+	view, err = r.Current()
+	if err != nil || view.Walkthrough.Mode != agentWalk || !view.Walkthrough.Ready {
+		t.Fatalf("legacy authored view = %+v, %v", view, err)
+	}
+}
+
+func TestContinueWalkthroughWaitsForReader(t *testing.T) {
+	prompt := kickoff("/tmp/example.review.yaml", false, true, "", "pending-checkpoint")
+	if !strings.Contains(prompt, "--continue") || !strings.Contains(prompt, "Wait for the reader") ||
+		strings.Contains(prompt, "--new") || !strings.Contains(prompt, "pending-checkpoint") {
+		t.Fatalf("continuing a saved walkthrough changed the continuation contract: %q", prompt)
+	}
+}
+
+func (r *Reviews) gotWalkPosition(t *testing.T, path string, want ReadingPosition) {
+	t.Helper()
+	if pos := r.ReadingPosition(path); !reflect.DeepEqual(pos, &want) {
+		t.Fatalf("reading position = %+v, want %+v", pos, want)
+	}
+}
+
+func walkStop(t *testing.T, view *View, id string) StationView {
+	t.Helper()
+	for _, stop := range view.Stations {
+		if stop.ID == id {
+			return stop
+		}
+	}
+	t.Fatalf("missing stop %s in %+v", id, view.Stations)
+	return StationView{}
+}
+
+func prWalkFixture(t *testing.T) (path, repo string) {
+	t.Helper()
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	dir := t.TempDir()
+	for name, body := range map[string]string{
+		"base/route.txt": "route by name\n", "base/retired.txt": "legacy route\n", "head/route.txt": "route by priority\n",
+	} {
+		p := filepath.Join(dir, name)
+		if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	path = filepath.Join(dir, "pr.review.yaml")
+	writeWalkReview(t, path, prWalkGenerated)
+	return path, filepath.Join(dir, "head")
+}
+
+func writeWalkReview(t *testing.T, path, stations string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte(prWalkHeader+stations), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+const prWalkHeader = `version: 1
+repo: head
+base_dir: base
+title: "PR #23: Prioritize shipments"
+`
+
+const prWalkGenerated = `stations:
+  - id: retired
+    title: retired.txt
+    parts:
+      - file: retired.txt
+        side: base
+        hunks: true
+  - id: route
+    title: route.txt
+    parts:
+      - file: route.txt
+        hunks: true
+`
+
+const prWalkGrouped = `stations:
+  - id: shipping
+    title: Use the priority route
+    what: The priority route replaces the retired route.
+    parts:
+      - file: route.txt
+        hunks: true
+      - file: retired.txt
+        side: base
+        hunks: true
+      - file: route.txt
+        side: base
+        hunks: true
+`
+
+const prWalkLateNote = `    notes:
+      - at: legacy route
+        file: retired.txt
+        kind: info
+        text: The old route is gone.
+      - at: route by name
+        file: route.txt
+        kind: info
+        text: The old selector is gone. See shipping:1.
+`

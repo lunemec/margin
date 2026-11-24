@@ -82,17 +82,24 @@ async function loadReview(dir, arg, fresh, file, restore, browsing) {
     state.fresh = new Set();
   }
   hooks.reviewOpened?.();
-  const position = same || opened.created ? null : await api("Reviews.ReadingPosition", opened.path).catch(() => null);
   await reload(!same);
   if (state.view?.path !== opened.path) {
     active.restoringPosition = false;
     return false;
   }
   if (!same) loadGitHub(active);
+  const position = same || opened.created ? null : state.view.walkthrough ? state.view.walkthrough.position :
+    await api("Reviews.ReadingPosition", opened.path).catch(() => null);
   if (!same && !await restoreReadingPosition(position)) {
-    // Like the terminal viewer: the first code stop, unless a guided walk starts fresh at the overview.
-    const atOverview = guided() && !reader().visited.length;
-    if (!atOverview && state.view.stations.length > 1) goStation(1);
+    if (state.view.mode === "file") {
+      const first = state.view.stations.findIndex((s) => s.kind === "code");
+      if (first >= 0) {
+        const step = guided() ? state.view.stations[first].steps?.findIndex((s) => s.kind === "change" || s.kind === "mech") : 0;
+        await goStation(first, -1, Math.max(0, step ?? 0));
+      }
+    } else if ((!guided() || reader().visited.length) && state.view.stations.length > 1) {
+      goStation(1);
+    }
   }
   if (opened.shared) toast("This review is also open in a terminal viewer: the agent's margin goto and where drive that one, not this window.", true);
   $("#workspace").classList.add("focus");
@@ -107,6 +114,10 @@ async function loadReview(dir, arg, fresh, file, restore, browsing) {
 let reloadRequest = 0;
 async function reload(top = false) {
   const opened = state.opened;
+  if (opened?.switchingWalkthrough) {
+    opened.reloadAfterSwitch = true;
+    return;
+  }
   const request = ++reloadRequest;
   try {
     const view = await api("Reviews.Current");
@@ -120,9 +131,15 @@ async function reload(top = false) {
 
 function applyView(view, top = false) {
   if (view.path !== state.opened?.path) return;
-  const prevId = cur()?.id;
+  const stop = cur();
+  const prevId = stop?.id;
   const prev = state.view;
-  if (prev?.path === view.path && prev.readerRevision > view.readerRevision) {
+  const sameFileView = !top && prev?.mode === "file" && view.mode === "file";
+  const article = $("#station");
+  const anchor = sameFileView ? visibleCodeAnchor(article) : null;
+  const step = sameFileView && walking() ? currentReadingStep(stop, anchor) : null;
+  const noteKey = sameFileView ? stop?.notes[state.note]?.key : undefined;
+  if (prev?.path === view.path && prev.mode === view.mode && prev.readerRevision > view.readerRevision) {
     view.reader = prev.reader;
     view.counts = prev.counts;
     view.readerRevision = prev.readerRevision;
@@ -148,9 +165,17 @@ function applyView(view, top = false) {
   indexDiscussions();
   const i = view.stations.findIndex((s) => s.id === prevId);
   state.station = i >= 0 ? i : Math.min(state.station, view.stations.length - 1);
-  const scroll = $("#station").scrollTop;
+  if (sameFileView && i >= 0) {
+    const current = cur();
+    if (step) state.step = Math.max(0, indexOfReadingStep(current, step));
+    if (noteKey) state.note = current.notes.findIndex((note) => note.key === noteKey);
+  }
+  const scroll = article.scrollTop;
   renderReview();
-  if (!top) $("#station").scrollTop = scroll;
+  if (!top) {
+    article.scrollTop = scroll;
+    restoreCodeAnchor(article, anchor);
+  }
   refreshParts();
   refreshDiffQuestions(view);
   refreshCommentReplies(view);
@@ -158,7 +183,7 @@ function applyView(view, top = false) {
 
 function applyReader(update) {
   const v = state.view;
-  if (!v || update.path !== v.path || update.readerRevision <= v.readerRevision) return;
+  if (!v || update.path !== v.path || update.mode !== v.mode || update.readerRevision <= v.readerRevision) return;
   v.readerRevision = update.readerRevision;
   if (JSON.stringify(v.reader) === JSON.stringify(update.reader) && JSON.stringify(v.counts) === JSON.stringify(update.counts)) return;
   const sent = sentComments(v);
@@ -170,6 +195,112 @@ function applyReader(update) {
   $("#station").scrollTop = scroll;
   if (sent !== sentComments(v)) refreshCommentReplies(v);
 }
+
+function visibleCodeAnchor(article) {
+  const box = article.getBoundingClientRect();
+  for (const row of article.querySelectorAll(".row[data-line][data-part]")) {
+    const rect = row.getBoundingClientRect();
+    if (rect.bottom > box.top && rect.top < box.bottom) {
+      return { part: row.dataset.part, line: row.dataset.line, offset: rect.top - box.top };
+    }
+  }
+  return null;
+}
+
+function restoreCodeAnchor(article, anchor) {
+  if (!anchor) return;
+  const row = rowAt(anchor.part, anchor.line);
+  if (!row) return;
+  const offset = row.getBoundingClientRect().top - article.getBoundingClientRect().top;
+  article.scrollTop += offset - anchor.offset;
+}
+
+export function renderWalkthrough() {
+  const opened = state.opened;
+  const walk = state.view?.path === opened?.path ? state.view?.walkthrough : null;
+  $("#walkthrough").classList.toggle("hidden", !walk);
+  if (!walk) return;
+  const preparing = !walk.ready && (opened.launchingWalkthrough || (opened.walkAgentLive && opened.agent?.walkPreparing));
+  const label = walk.offer ? "Agent walkthrough is ready" :
+    walk.ready ? "Walkthrough" :
+    preparing ? "File by file · Preparing agent walkthrough…" :
+    opened.walkFailure ? "File by file · Could not start the agent walkthrough" :
+    opened.walkAgentLive ? "File by file · Agent connected" :
+    opened.agent?.walkAttempted ? "File by file · Agent stopped before the walkthrough was ready" : "File by file · Agent not started";
+  const status = $("#walkthrough-status");
+  if (status.textContent !== label) status.textContent = label;
+  $("#walkthrough-progress").classList.toggle("hidden", !preparing);
+  for (const [mode, name, offer] of [
+    ["file", "File by file", "Keep reviewing by file"],
+    ["agent", "Agent walkthrough", "Open agent walkthrough"],
+  ]) {
+    const button = $("#walkthrough-" + mode);
+    const text = walk.offer ? offer : name;
+    if (button.textContent !== text) button.textContent = text;
+    button.classList.toggle("hidden", !walk.ready);
+    button.setAttribute("aria-pressed", String(walk.mode === mode && !walk.offer));
+    button.disabled = !!opened.switchingWalkthrough;
+  }
+}
+
+async function selectWalkthrough(mode) {
+  const opened = state.opened;
+  const walk = state.view?.walkthrough;
+  const changing = mode !== walk?.mode;
+  if (!walk?.ready || (!changing && !walk.offer) || opened.switchingWalkthrough ||
+      (changing && !beginDiscussionAction())) return;
+  opened.switchingWalkthrough = true;
+  if (changing) {
+    $("#review-body").inert = true;
+    $("#toolbar").inert = true;
+  }
+  ++reloadRequest;
+  renderWalkthrough();
+  try {
+    if (changing) {
+      queueReadingPosition(0, true);
+      await flushReadingPosition();
+    }
+    if (state.opened !== opened) return;
+    opened.restoringPosition = changing;
+    const view = await api("Reviews.SelectWalkthrough", opened.path, mode);
+    if (state.opened !== opened || view.path !== opened.path) return;
+    if (changing) {
+      activeThread = "";
+      readingOrigin = null;
+      state.ghPull = null;
+      Object.assign(state, { station: 0, note: -1, step: 0, sel: null, compose: null, editing: null, block: null,
+        parts: {}, around: {}, known: null, fresh: new Set(), spot: -1, spotLines: null });
+    }
+    applyView(view, changing);
+    if (changing) {
+      if (!await restoreReadingPosition(view.walkthrough.position)) await goStation(0);
+      loadThreads(opened);
+    }
+  } catch (e) {
+    if (state.opened === opened) toast(errText(e), true);
+  } finally {
+    opened.restoringPosition = false;
+    opened.switchingWalkthrough = false;
+    if (changing) {
+      $("#review-body").inert = false;
+      $("#toolbar").inert = false;
+      discussionBusy = false;
+      updateDiscussionControls();
+    }
+    if (state.opened === opened) {
+      if (changing) queueReadingPosition(0, true);
+      renderWalkthrough();
+      if (opened.reloadAfterSwitch) {
+        opened.reloadAfterSwitch = false;
+        reload();
+      }
+    }
+  }
+}
+
+$("#walkthrough-file").onclick = () => selectWalkthrough("file");
+$("#walkthrough-agent").onclick = () => selectWalkthrough("agent");
 
 // trackFresh marks notes that appeared since the last load, so notes the agent adds elsewhere are not missed.
 function trackFresh(view) {
@@ -272,7 +403,8 @@ function position(err = "") {
     if (last && last.part === part && last.to + 1 >= line) last.to = Math.max(last.to, line);
     else visible.push({ part, from: line, to: line });
   }
-  return { station: state.station, note: state.note, part: sel?.part ?? -1, line: sel?.line ?? -1, visible, spot: state.spot, err };
+  return { version: state.view?.version, station: state.station, note: state.note, part: sel?.part ?? -1,
+    line: sel?.line ?? -1, visible, spot: state.spot, err };
 }
 
 function findStation(head) {
@@ -291,11 +423,15 @@ function findStation(head) {
 // terminal viewer's goto.
 async function gotoTarget(arg) {
   arg = (arg ?? "").trim();
+  const st = state.view.stations;
+  const exact = st.findIndex((s) => s.id === arg);
+  if (exact >= 0) return goStation(exact);
   let head = arg, tail = "";
   const i = arg.lastIndexOf(":");
   if (i >= 0) [head, tail] = [arg.slice(0, i), arg.slice(i + 1)];
-  if (tail && /[./]/.test(head) && /^\d+$/.test(tail)) return gotoFileLine(head, +tail);
-  const si = findStation(head);
+  const station = st.findIndex((s) => s.id === head);
+  if (station < 0 && tail && /[./]/.test(head) && /^\d+$/.test(tail)) return gotoFileLine(head, +tail);
+  const si = station >= 0 ? station : findStation(head);
   goStation(si);
   if (!tail) return;
   const n = Number(tail);
@@ -318,7 +454,14 @@ function gotoNote(si, ni) {
 hooks.noteRef = (id, n) => {
   const st = state.view?.stations ?? [];
   const si = st.findIndex((s) => s.kind === "code" && esc(s.id) === id);
-  if (si < 0) return undefined;
+  if (si < 0) {
+    const ref = id + ":" + n;
+    for (let i = 0; i < st.length; i++) {
+      const index = st[i].notes.findIndex((note) => esc(note.authoredRef) === ref);
+      if (index >= 0) return { station: i, note: index };
+    }
+    return undefined;
+  }
   return n >= 1 && n <= st[si].notes.length ? { station: si, note: n - 1 } : null;
 };
 
@@ -430,6 +573,7 @@ function noteVisible(s, n) {
 
 export function renderReview() {
   const v = state.view;
+  renderWalkthrough();
   $("#r-kicker").textContent = v.kicker;
   $("#r-title").textContent = v.title;
   $("#r-stats").textContent = v.stats;
@@ -586,13 +730,15 @@ export function goStation(i, noteIdx = -1, step = 0) {
 
 function renderStation() {
   const focus = discussionFocus();
-  const compose = state.compose, editor = document.activeElement;
-  const caret = editor?.matches("#station .composer:not(.edit-box) textarea") ? [editor.selectionStart, editor.selectionEnd] : null;
+  const compose = state.compose, edit = state.editing, editor = document.activeElement;
+  const editorSelector = editor?.matches("#station .edit-box textarea") ? "#station .edit-box textarea" :
+    editor?.matches("#station .composer textarea") ? "#station .composer:not(.edit-box) textarea" : "";
+  const caret = editorSelector ? [editor.selectionStart, editor.selectionEnd] : null;
   drawStation();
   syncDiscussionUI();
   restoreDiscussionFocus(focus);
-  if (caret && state.compose === compose) {
-    const textarea = $("#station .composer:not(.edit-box) textarea:not(:disabled)");
+  if (caret && state.compose === compose && state.editing === edit) {
+    const textarea = $(editorSelector + ":not(:disabled)");
     textarea?.focus({ preventScroll: true });
     textarea?.setSelectionRange(...caret);
   }
@@ -2227,6 +2373,7 @@ function renderWalk(box, s) {
       wrapStep(body, s);
       break;
   }
+  if (state.view.mode === "file" && st.kind !== "wrap") box.append(verdictBar(s));
   const nav = el(`<div class="walk-nav"><button class="small" ${state.station === 0 && state.step === 0 ? "disabled" : ""}>← Back <kbd>b</kbd></button><span class="spacer"></span>
     <button class="primary small">${state.step < steps.length - 1 ? "Next" : "Next stop"} <kbd>space</kbd></button></div>`);
   const [back, next] = nav.querySelectorAll("button");
@@ -2599,10 +2746,11 @@ function renderOverview(box) {
   const forText = v.asked?.trim() || v.motivation?.trim();
   rows.push(["For", forText ? `<div class="clamp${cap}">${prose(forText)}</div>${v.askedFrom ? `<span class="muted small">from ${esc(v.askedFrom)}</span>` : ""}` : `<span class="muted">not recorded; margin --intent "…" says it next time</span>`]);
   const does = v.did || v.summary;
-  rows.push(["Does", does ? `<div class="clamp${cap}">${prose(does)}</div>` : `<span class="muted">the agent is still reading the change; this fills in by itself</span>`]);
+  if (does) rows.push(["Does", `<div class="clamp${cap}">${prose(does)}</div>`]);
+  else if (!v.walkthrough) rows.push(["Does", `<span class="muted">the agent is still reading the change; this fills in by itself</span>`]);
   if (v.gap) rows.push(["Gap", noGap(v.gap) ? `<span class="m-add">none: it does what was asked</span>` : `<div class="clamp${cap}">${prose(v.gap)}</div>`, "m-chg"]);
   ov.append(card(rows));
-  if (!v.did && !v.gap) ov.append(el(`<p class="muted small">The agent has not compared the change with what was asked yet.</p>`));
+  if (!v.walkthrough && !v.did && !v.gap) ov.append(el(`<p class="muted small">The agent has not compared the change with what was asked yet.</p>`));
   renderOrient(ov);
   const route = el(`<div><h3>The route · click opens a stop</h3><div class="route"></div></div>`);
   let total = 0, read = 0, n = 0;
@@ -3445,12 +3593,15 @@ const reactionEmoji = { THUMBS_UP: "👍", THUMBS_DOWN: "👎", LAUGH: "😄", H
 
 // loadThreads pulls what is said on the pull request: the threads of the reader's posted comments,
 // everyone else's threads, placed on their lines, and the conversation.
+let threadsRequest = 0;
 async function loadThreads(opened = state.opened, quiet = true) {
   if (!state.gh) return;
+  const request = ++threadsRequest;
+  const mode = state.view?.mode;
   state.ghThreadsAt = Date.now();
   try {
     const pull = await api("Reviews.GitHubThreads");
-    if (state.opened !== opened) return;
+    if (state.opened !== opened || state.view?.mode !== mode || request !== threadsRequest) return;
     state.ghPull = pull;
     if (state.view) {
       rerenderKeepScroll();
@@ -3533,6 +3684,8 @@ function resolveButton(t, what, key, comment) {
     e.stopPropagation();
     b.disabled = true;
     const opened = state.opened;
+    const mode = state.view?.mode;
+    const request = threadsRequest;
     try {
       const pull = await api("Reviews.ResolveGitHubThread", t.id, !t.resolved);
       if (state.opened !== opened) return;
@@ -3540,10 +3693,14 @@ function resolveButton(t, what, key, comment) {
         setLocalResolution(state.view.path, comment, undefined);
       }
       expandedDisclosures.delete(key);
-      state.ghPull = pull;
-      rerenderKeepScroll();
-      if (document.querySelector(".modal.gh-panel")) openGitHubPanel();
-      else disclosureSummary(key)?.focus({ preventScroll: true });
+      if (state.view?.mode !== mode || request !== threadsRequest) {
+        loadThreads(opened);
+      } else {
+        state.ghPull = pull;
+        rerenderKeepScroll();
+        if (document.querySelector(".modal.gh-panel")) openGitHubPanel();
+        else disclosureSummary(key)?.focus({ preventScroll: true });
+      }
       toast(`${what} ${t.resolved ? "opened again" : "resolved"} on GitHub`);
     } catch (err) {
       b.disabled = false;
@@ -3924,11 +4081,11 @@ function pageMove(dir) {
 }
 
 export function reviewKey(e) {
-  if (!state.view) return false;
+  if (!state.view || state.opened?.switchingWalkthrough) return false;
   const k = e.key;
   const s = cur();
   if ((k === "Enter" || k === " ") && e.target.closest?.("button, summary")?.closest(
-    "#reading-mode, .discussion-nav, .jump-reply, .question-thread-actions, .diff-questions-list, .answers, .review-disclosure, .note-actions",
+    "#walkthrough, #reading-mode, .discussion-nav, .jump-reply, .question-thread-actions, .diff-questions-list, .answers, .review-disclosure, .note-actions",
   )) return false;
   if (k === "Tab") return false;
   if (document.querySelector(".modal-back")) return modalKey(e);
@@ -4041,11 +4198,31 @@ export function reviewKey(e) {
   return true;
 }
 
-function stepPosition(s, step) {
+function stepPosition(s, step, line = null) {
   if (!step) return null;
+  if (step.kind === "mech") {
+    const sub = step.subs?.find((item) => line?.station === s.id && stepShows(s, item, line.part, line.line)) ?? step.subs?.[0];
+    return { ...stepPosition(s, sub), kind: "mech" };
+  }
   if (step.kind !== "change" && step.kind !== "background") return { kind: step.kind };
   const part = s.parts[step.part];
   return { kind: step.kind, file: part?.file ?? "", side: part?.base ? "base" : "", from: step.from, to: step.to };
+}
+
+function indexOfReadingStep(station, saved) {
+  const steps = station.steps ?? [];
+  if (!saved.file) return steps.findIndex((step) => step.kind === saved.kind);
+  const match = (exact) => steps.findIndex((step) => {
+    const candidates = step.kind === "mech" ? step.subs ?? [] : [step];
+    return candidates.some((candidate) => {
+      const key = stepPosition(station, candidate);
+      const kind = saved.kind === "mech" ? "change" : saved.kind;
+      return key.kind === kind && key.file === saved.file && key.side === (saved.side ?? "") &&
+        (exact ? key.from === saved.from && key.to === saved.to : key.from <= saved.from && key.to >= saved.from);
+    });
+  });
+  const exact = match(true);
+  return exact >= 0 ? exact : match(false);
 }
 
 async function restoreReadingPosition(position) {
@@ -4057,18 +4234,29 @@ async function restoreReadingPosition(position) {
   }
   const s = state.view.stations[index];
   const saved = position.step;
-  const step = saved && guided() ? (s.steps ?? []).findIndex((item) => {
-    const key = stepPosition(s, item);
-    return key.kind === saved.kind && (!("from" in key) || (key.file === (saved.file ?? "") &&
-      key.side === (saved.side ?? "") && key.from === saved.from && key.to === saved.to));
-  }) : 0;
+  const step = saved && guided() ? indexOfReadingStep(s, saved) : 0;
   await goStation(index, -1, Math.max(0, step));
   if (step >= 0) $("#station").scrollTop = position.scroll;
   return true;
 }
 
+function currentReadingStep(station, visible = null) {
+  const step = station.steps?.[state.step];
+  if (step?.kind !== "mech") return stepPosition(station, step);
+  const composer = state.compose;
+  if (composer?.station === station.id) return stepPosition(station, step, composer);
+  const draft = state.editing && reader().comments.find((comment) => comment.id === state.editing.id);
+  if (draft?.station === station.id) {
+    return stepPosition(station, step, { station: station.id, part: draft.part, line: draft.at });
+  }
+  const row = visible ?? visibleCodeAnchor($("#station"));
+  const line = row ? { station: station.id, part: Number(row.part), line: Number(row.line) } : state.sel;
+  return stepPosition(station, step, line);
+}
+
 function readingPosition(s) {
-  return { station: s.id, step: walking() ? stepPosition(s, s.steps?.[state.step]) : null, scroll: $("#station").scrollTop };
+  return { station: s.id, mode: state.view.mode ?? "", step: walking() ? currentReadingStep(s) : null,
+    scroll: $("#station").scrollTop };
 }
 
 function captureReadingOrigin() {

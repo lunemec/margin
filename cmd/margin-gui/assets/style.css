@@ -624,6 +624,20 @@ button.chip.chip-issue.on { background: var(--issue-tint); border-color: var(--i
 .vrow .muted { margin-left: auto; }
 .st .num .vdot { margin-top: 4px; }
 
+#walkthrough {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  flex: none;
+  padding: 5px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-1);
+  font-size: 12px;
+}
+#walkthrough progress { width: 100px; height: 8px; accent-color: var(--accent); }
+#walkthrough button[aria-pressed="true"] { border-color: var(--accent); }
+
 #toolbar { display: flex; align-items: center; gap: 4px; padding: 5px 12px; border-bottom: 1px solid var(--line); background: var(--bg-1); flex: none; flex-wrap: wrap; }
 #toolbar-actions { display: contents; }
 #reading-mode { display: inline-grid; grid-template-columns: 1fr 1fr; gap: 2px; padding: 2px; border-radius: 8px; background: var(--bg); }

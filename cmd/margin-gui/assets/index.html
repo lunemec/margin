@@ -76,6 +76,12 @@
         <button id="agent-link" class="small hidden">Link saved conversation</button>
         <button id="agent-btn" class="primary small">Start agent</button>
       </header>
+      <div id="walkthrough" class="hidden">
+        <span id="walkthrough-status" role="status"></span>
+        <progress id="walkthrough-progress" class="hidden" aria-label="Preparing agent walkthrough"></progress>
+        <button id="walkthrough-file" class="small hidden" type="button">File by file</button>
+        <button id="walkthrough-agent" class="small hidden" type="button">Agent walkthrough</button>
+      </div>
       <div id="toolbar">
         <div id="reading-mode" role="group" aria-label="Reading mode">
           <button type="button" data-full="false" aria-pressed="false" title="Follow the brief, background code, changes, and verdict in order (w)">Step by step</button>

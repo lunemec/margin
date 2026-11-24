@@ -8,8 +8,9 @@ import (
 )
 
 type DiscussionLocation struct {
-	Part int `json:"part"`
-	At   int `json:"at"`
+	station string
+	Part    int `json:"part"`
+	At      int `json:"at"`
 }
 
 func locateDiscussionLine(d *doc.Doc, q state.Question) DiscussionLocation {
@@ -29,30 +30,53 @@ func locateDiscussionLine(d *doc.Doc, q state.Question) DiscussionLocation {
 
 func locateDiscussionCode(d *doc.Doc, station, file, side string, find func([]string) int) DiscussionLocation {
 	lost := DiscussionLocation{Part: -1, At: -1}
-	_, s := d.Station(station)
-	if s == nil {
+	_, original := d.Station(station)
+	if original == nil && (d.Review == nil || !isPRWalk(d.Review)) {
 		return lost
 	}
-	var parts []int
-	for i, p := range s.Parts {
-		if p.Err == nil && p.Spec.File == file && p.Base == (side == "base") {
-			parts = append(parts, i)
+	partMatches := func(p *doc.Part) bool {
+		return p.Err == nil && p.Spec.File == file && p.Base == (side == "base")
+	}
+	var at = -1
+	for _, s := range d.Stations {
+		for _, p := range s.Parts {
+			if partMatches(p) {
+				at = find(p.Lines)
+				break
+			}
+		}
+		if at >= 0 {
+			break
 		}
 	}
-	if len(parts) == 0 {
-		return lost
-	}
-	at := find(s.Parts[parts[0]].Lines)
 	if at < 0 {
 		return lost
 	}
-	for _, i := range parts {
-		p := s.Parts[i]
-		if p.Range.Start <= at && at <= p.Range.End {
-			return DiscussionLocation{Part: i, At: at}
+	fallback := lost
+	if original != nil {
+		for i, p := range original.Parts {
+			if !partMatches(p) {
+				continue
+			}
+			location := DiscussionLocation{station: station, Part: i, At: at}
+			if p.Range.Start <= at && at <= p.Range.End {
+				return location
+			}
+			if fallback.station == "" {
+				fallback = location
+			}
 		}
 	}
-	return DiscussionLocation{Part: parts[0], At: at}
+	if d.Review != nil && isPRWalk(d.Review) {
+		for _, s := range d.Stations {
+			for i, p := range s.Parts {
+				if partMatches(p) && p.Range.Start <= at && at <= p.Range.End {
+					return DiscussionLocation{station: s.ID, Part: i, At: at}
+				}
+			}
+		}
+	}
+	return fallback
 }
 
 func uniqueDiscussionLine(count int, excerpt string, matches func(int) bool) int {

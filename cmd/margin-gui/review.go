@@ -33,6 +33,7 @@ type Reviews struct {
 	stateMu        sync.Mutex
 	path           string
 	loaded         *doc.Doc
+	walk           walkthrough
 	version        int
 	readerRevision int
 	watcher        *watch.Watcher
@@ -77,15 +78,16 @@ type View struct {
 	Problems   []string      `json:"problems"`
 	Unshown    []string      `json:"unshown"`
 	ReaderUpdate
-	Version      int           `json:"version"`
-	Coverage     *CoverageView `json:"coverage,omitempty"`
-	Ignored      []string      `json:"ignored,omitempty"`
-	Guidance     string        `json:"guidance,omitempty"`
-	Repo         string        `json:"repo"`
-	Instructions string        `json:"instructions,omitempty"`
-	Renames      []string      `json:"renames,omitempty"`
-	Skip         []string      `json:"skip,omitempty"`
-	HasBase      bool          `json:"hasBase"`
+	Version      int              `json:"version"`
+	Walkthrough  *WalkthroughView `json:"walkthrough,omitempty"`
+	Coverage     *CoverageView    `json:"coverage,omitempty"`
+	Ignored      []string         `json:"ignored,omitempty"`
+	Guidance     string           `json:"guidance,omitempty"`
+	Repo         string           `json:"repo"`
+	Instructions string           `json:"instructions,omitempty"`
+	Renames      []string         `json:"renames,omitempty"`
+	Skip         []string         `json:"skip,omitempty"`
+	HasBase      bool             `json:"hasBase"`
 }
 
 type CoverageView struct {
@@ -227,7 +229,8 @@ type NoteView struct {
 	Problem    string `json:"problem,omitempty"`
 	Changed    string `json:"changed,omitempty"`
 	// RefBy lists the notes that mention this one, as stop:n.
-	RefBy []string `json:"refBy,omitempty"`
+	RefBy       []string `json:"refBy,omitempty"`
+	AuthoredRef string   `json:"authoredRef,omitempty"`
 }
 
 var stationKinds = map[doc.StationKind]string{doc.Overview: "overview", doc.Code: "code", doc.Recap: "recap", doc.Tests: "tests"}
@@ -294,19 +297,36 @@ func (r *Reviews) PickFile() (string, error) {
 }
 
 // Current builds the view of the open review and watches the files it shows for changes.
-func (r *Reviews) Current() (*View, error) {
+func (r *Reviews) Current() (*View, error) { return r.loadCurrent("", "") }
+
+// SelectWalkthrough changes the active document only after the requested view has been built.
+func (r *Reviews) SelectWalkthrough(path string, mode walkMode) (*View, error) {
+	if mode != fileWalk && mode != agentWalk {
+		return nil, errors.New("unknown walkthrough view")
+	}
+	return r.loadCurrent(path, mode)
+}
+
+func (r *Reviews) loadCurrent(expectedPath string, requested walkMode) (*View, error) {
 	r.loadMu.Lock()
 	defer r.loadMu.Unlock()
 	r.mu.Lock()
-	path, version := r.path, r.version
+	path, version, current := r.path, r.version, r.walk.mode
 	r.mu.Unlock()
-	if path == "" {
-		return nil, errors.New("no review open")
+	if path == "" || (expectedPath != "" && path != expectedPath) {
+		return nil, errors.New("the open review changed")
 	}
-	d, err := r.build(path)
+	saved := readReviewResume(path)
+	d, walk, err := r.build(path, saved, current, requested)
 	var v *View
 	if err == nil {
 		v = viewOf(d)
+		for i := range v.Stations {
+			for j := range v.Stations[i].Notes {
+				note := &v.Stations[i].Notes[j]
+				note.AuthoredRef = walk.noteRefs[note.Key]
+			}
+		}
 	}
 	r.stateMu.Lock()
 	defer r.stateMu.Unlock()
@@ -325,8 +345,33 @@ func (r *Reviews) Current() (*View, error) {
 	if err != nil {
 		return nil, err
 	}
-	r.watch(append(d.WatchPaths(), review.StatePath(path), review.CommentsPath(path)))
-	r.loaded = d
+	paths := append(d.WatchPaths(), review.StatePath(path), review.CommentsPath(path))
+	if walk.mode != "" {
+		paths = append(paths, walkReadyPath(path))
+		if saved.WalkMode == "" && walk.mode == fileWalk && !walk.ready && migrateFileProgress(st, walk.legacyIDs) {
+			if err := st.Save(); err != nil {
+				return nil, err
+			}
+		}
+		if saved.WalkMode == "" || requested != "" {
+			if err := updateReviewResume(path, func(record *reviewResume) bool {
+				if requested == "" && record.WalkMode != "" {
+					return false
+				}
+				record.WalkMode = walk.mode
+				record.WalkChoice = requested != ""
+				return true
+			}); err != nil {
+				return nil, err
+			}
+		}
+		v.Walkthrough = &WalkthroughView{
+			Mode: walk.mode, Ready: walk.ready, Offer: walk.ready && walk.mode == fileWalk && !saved.WalkChoice && requested == "",
+			Position: saved.positionFor(walk),
+		}
+	}
+	r.watch(paths)
+	r.loaded, r.walk = d, walk
 	r.version++
 	v.Version = r.version
 	v.ReaderUpdate = r.readerUpdate(d, st)
@@ -352,23 +397,26 @@ func (r *Reviews) current() string {
 	return r.path
 }
 
-func (r *Reviews) build(path string) (*doc.Doc, error) {
+func (r *Reviews) build(path string, saved reviewResume, current, requested walkMode) (*doc.Doc, walkthrough, error) {
 	rv, err := review.Load(path)
 	if err != nil {
-		return nil, err
+		return nil, walkthrough{}, err
 	}
 	files, err := source.Open(rv)
 	if err != nil {
-		return nil, err
+		return nil, walkthrough{}, err
 	}
 	defer files.Close()
-	d := doc.Build(rv, files)
+	d, walk, err := buildWalkthrough(rv, files, saved, current, requested)
+	if err != nil {
+		return nil, walkthrough{}, err
+	}
 	set, err := coverage.Load(review.CoveragePath(rv.Path))
 	if err != nil {
 		d.Problems = append(d.Problems, doc.Problem{Station: "tests", Msg: err.Error()})
 	}
 	d.AttachCoverage(set)
-	return d, nil
+	return d, walk, nil
 }
 
 func (r *Reviews) Close() { r.setReview("") }
@@ -378,7 +426,7 @@ func (r *Reviews) setReview(path string) {
 	defer r.stateMu.Unlock()
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.path, r.loaded = path, nil
+	r.path, r.loaded, r.walk = path, nil, walkthrough{}
 	r.version++
 	if r.watcher != nil {
 		r.watcher.Set(nil)

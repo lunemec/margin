@@ -317,6 +317,9 @@ func locateQuestion(d *doc.Doc, q DiffQuestion) LocatedQuestion {
 		}
 		return uniqueDiscussionLine(limit+1, q.Excerpt, matches)
 	})
+	if location.station != "" {
+		q.Station = location.station
+	}
 	return LocatedQuestion{DiffQuestion: q, DiscussionLocation: location}
 }
 
