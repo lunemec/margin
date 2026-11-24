@@ -1,7 +1,7 @@
 import { Events } from "/wails/runtime.js";
 import { api, $, state, hooks, toast, errText, tail, openModal, closeModal, applyTheme, setThemeMode, followsSystem } from "./core.js";
 import { openReview, openReviewFile, reviewKey, renderReview, sendComments, sendFixes } from "./review.js";
-import { loadWorkspace, loadRecent, renderSide, addFolder, selectWorktree, homeKey, backToReview, syncSideButtons, openSwitcher, switcherOpen, openSettings, navState } from "./nav.js";
+import { loadWorkspace, loadRecent, renderSide, addFolder, selectWorktree, refreshWorktree, homeKey, backToReview, syncSideButtons, openSwitcher, switcherOpen, openSettings, navState } from "./nav.js";
 
 // Agent terminal
 
@@ -254,7 +254,6 @@ async function crumbBack() {
   if (!o) return;
   const w = state.worktree;
   if (w && (w.path === o.repo || w.repo?.worktrees?.some((x) => x.path === o.repo))) {
-    $("#workspace").classList.remove("focus");
     return selectWorktree(w, w.repo);
   }
   const nav = navState();
@@ -344,7 +343,7 @@ $("#show-side").onclick = togglePicker;
 $("#toggle-picker").onclick = togglePicker;
 $("#crumb").onclick = crumbBack;
 $("#back-review").onclick = backToReview;
-$("#wt-refresh").onclick = () => state.worktree && selectWorktree(state.worktree, state.worktree.repo);
+$("#wt-refresh").onclick = refreshWorktree;
 $("#agent-btn").onclick = toggleAgent;
 $("#agent-link").onclick = linkAgent;
 $("#send-btn").onclick = sendComments;

@@ -64,23 +64,20 @@ The **sidebar** holds everything you work on:
 - **Reviews in progress** lists the reviews you opened lately, with how many stops you judged, the
   drafts you have not sent and a green dot while an agent runs for them. Click one to go on.
 - **Repositories** lists the folders you added with ＋. A folder can be a repository or hold several
-  (found up to two levels deep). Each repository shows its worktrees with their branch, and a
-  yellow `●` with the number of changed files where there is uncommitted work. The filter box
-  narrows the list by repository, branch or path.
+  (found up to two levels deep). A yellow `●` counts changed files across the repository's
+  worktrees. The filter box narrows the list by repository, branch or path.
 
-Click a worktree to see **what there is to review in it**:
+Click a repository to open its full-width picker on the main worktree. Use the **Worktree** selector
+to switch checkouts, or the sidebar button to switch repositories. The picker shows:
 
-- **Uncommitted changes** and **staged changes**, with the number of files.
-- **This branch** against the main branch, with how many commits it is ahead and behind.
-- **Reviews of this repository** that already exist, to pick up again.
+- **Pull requests** first when the GitHub CLI `gh` is installed. A pull request whose head commit
+  is missing locally offers *Fetch and review*, which runs `git fetch origin pull/N/head` and
+  opens it.
 - **Branches**, newest first, each with how far it is ahead and behind the main branch, the worktree
   it is checked out in, and whether a review of it is in progress. Tick *remote branches* to see
   those too.
 - **Commits** on the current branch.
-- **Pull requests**, when the GitHub CLI `gh` is installed: the open pull requests of the
-  repository. A pull request whose head commit is not in your repository yet offers *Fetch and
-  review*, which runs `git fetch origin pull/N/head` and opens it. This fetch is the only git
-  command margin ever runs that changes your repository, and only when you click it.
+- **Uncommitted changes**, **Staged changes**, **This branch**, and existing reviews below the tabs.
 
 Press **ctrl+k** anywhere to **go to** anything by typing a few letters of it: a review, a
 repository or worktree, a branch of the worktree you are in, a pull request, or a command
@@ -321,7 +318,7 @@ Changed settings apply to reviews and agents started afterwards.
 | `T` `i` `o` | run the selected line's tests, try a change to it, show or hide the test output (margin-tui has them too) |
 | `j` `k` `enter` | on a worktree page: move through what to review and open it |
 | `/` | on a worktree page: filter the branches, commits or pull requests |
-| `1` `2` `3` | on a worktree page: branches, commits, pull requests |
+| `1` `2` `3` | on a worktree page: select tabs in order (pull requests, branches, commits when `gh` is available) |
 | `r` | on a worktree page: read git again; in a review: reload |
 | `esc` | on a worktree page: back to the open review |
 
