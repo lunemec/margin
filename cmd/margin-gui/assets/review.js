@@ -1,7 +1,7 @@
 import { Events, Clipboard } from "/wails/runtime.js";
 import { api, $, $$, state, hooks, esc, prose, md, oneLine, el, toast, errText, tail, plural, shortList, base, openModal, closeModal } from "./core.js";
 import { openAnswers, hasAnswerDraft } from "./answers.js";
-import { agentReply, discussionThreads, locallyResolved, nextThread, questionReply, questionSelection, questionTurns, readReply, setLocallyResolved, unreadReply } from "./discussions.js";
+import { agentReply, discussionThreads, localResolution, nextThread, questionReply, questionSelection, questionTurns, readReply, setLocalResolution, unreadReply } from "./discussions.js";
 import { runTests, tryChange, toggleTestPanel, resetTests, statusOf, statusIcon, testHooks, results } from "./tests.js";
 
 export { closeModal };
@@ -1052,9 +1052,13 @@ async function markDismissed(n) {
   expandedDisclosures.delete(key);
   if (!await act("MarkNote", n.key, "dismissed") || state.view !== view || cur() !== s) return;
   const i = s.notes.indexOf(n);
-  if (!was) state.note = i;
-  const target = was ? $(`#station .note[data-note="${i}"]`) : disclosureSummary(key);
-  target?.focus({ preventScroll: true });
+  if (was) {
+    const card = $(`#station .note[data-note="${i}"]`);
+    if (card) focusDiscussion(card);
+  } else {
+    state.note = i;
+    disclosureSummary(key)?.focus({ preventScroll: true });
+  }
 }
 
 function xKey() {
@@ -1233,8 +1237,8 @@ function questionCard(q, opts = {}) {
 
 const expandedDisclosures = new Set();
 const threadKey = (q) => `thread:${q.id}`;
-const disclosureSummary = (key) => $(`#station [data-disclosure="${CSS.escape(key)}"] > summary`);
-const threadResolved = (q) => q.resolved || ghMine(q)?.resolved || locallyResolved(state.view.path, q);
+const disclosureSummary = (key, scope = $("#station")) => scope?.querySelector(`[data-disclosure="${CSS.escape(key)}"] > summary`);
+const threadResolved = (q) => localResolution(state.view.path, q) ?? (q.resolved || ghMine(q)?.resolved);
 
 function reviewDisclosure(card, key, label, { thread, replies = [] } = {}) {
   const details = el(`<details class="review-disclosure" data-disclosure="${esc(key)}"><summary>
@@ -1261,18 +1265,23 @@ function threadDisclosure(card, q, type, opts = {}) {
 
 function localResolveAction(q) {
   const path = state.view.path;
-  const local = locallyResolved(path, q);
-  const button = el(`<button class="na local-resolve">${local ? "Unresolve locally" : "Resolve"}</button>`);
-  button.title = local ? "Keep this discussion expanded locally" : "Collapse this discussion locally";
-  if (!local && threadResolved(q)) button.hidden = true;
+  const resolved = threadResolved(q);
+  const button = el(`<button class="na local-resolve">${resolved ? "Unresolve locally" : "Resolve"}</button>`);
+  button.title = resolved ? "Keep this discussion expanded locally" : "Collapse this discussion locally";
   button.onclick = (e) => {
     e.stopPropagation();
     if (followUpDrafts.has(JSON.stringify([path, q.id]))) return toast("Finish or cancel your follow-up before resolving.");
     const key = threadKey(q);
     expandedDisclosures.delete(key);
-    setLocallyResolved(path, q, !local);
+    setLocalResolution(path, q, !resolved);
+    const list = button.closest(".diff-questions-list");
     renderKeepScroll();
-    const target = disclosureSummary(key) ?? $(`#station [data-discussion="${CSS.escape(q.id)}"]`);
+    if (list) {
+      renderDiffQuestionList(list, path, list.dataset.selected);
+      syncDiscussionUI();
+    }
+    const scope = list ?? $("#station");
+    const target = disclosureSummary(key, scope) ?? scope.querySelector(`[data-discussion="${CSS.escape(q.id)}"]`);
     target?.focus({ preventScroll: true });
   };
   return button;
@@ -1503,8 +1512,8 @@ async function jumpDiscussion(review, id, reply, turnID) {
 
 function discussionFocus() {
   const active = document.activeElement;
-  if (active?.matches("#station .review-disclosure > summary")) {
-    return { disclosure: active.parentElement.dataset.disclosure };
+  if (active?.matches(".review-disclosure > summary")) {
+    return { disclosure: active.parentElement.dataset.disclosure, modal: !!active.closest(".diff-questions-list") };
   }
   const card = active?.closest("#station [data-discussion], .diff-questions-list [data-discussion]");
   if (!card) return null;
@@ -1516,9 +1525,9 @@ function discussionFocus() {
 
 function restoreDiscussionFocus(focus) {
   if (!focus) return;
-  if (focus.disclosure) return disclosureSummary(focus.disclosure)?.focus({ preventScroll: true });
-  const replySelector = focus.reply ? "[data-discussion-reply]" : ":not([data-discussion-reply])";
   const scope = focus.modal ? ".diff-questions-list" : "#station";
+  if (focus.disclosure) return disclosureSummary(focus.disclosure, $(scope))?.focus({ preventScroll: true });
+  const replySelector = focus.reply ? "[data-discussion-reply]" : ":not([data-discussion-reply])";
   const card = $(`${scope} [data-discussion="${CSS.escape(focus.id)}"]${replySelector}`);
   const active = focus.turn ? card?.querySelector(`[data-question-turn="${CSS.escape(focus.turn)}"]`) :
     focus.caret ? card?.querySelector(".question-follow-up textarea") : card;
@@ -1627,7 +1636,7 @@ function diffQuestionCard(q, review = "", selected = false) {
   }
   const latest = turns.at(-1);
   const actions = el(`<div class="question-thread-actions"></div>`);
-  if (!review) actions.append(localResolveAction(q));
+  actions.append(localResolveAction(q));
   if (latest.status === "failed" || latest.status === "interrupted") {
     const retry = el(`<button class="small">Retry</button>`);
     retry.onclick = async () => {
@@ -1647,7 +1656,7 @@ function diffQuestionCard(q, review = "", selected = false) {
   }
   if (q.answer && latest.status !== "queued" && latest.status !== "answering") actions.append(followUpComposer(q.id, path));
   if (actions.childElementCount) card.append(actions);
-  return review ? card : threadDisclosure(card, q, "question");
+  return threadDisclosure(card, q, "question", { where: !!review });
 }
 
 function followUpComposer(thread, path) {
@@ -1745,7 +1754,7 @@ function openDiffQuestions(id = "", turnID) {
   addDiscussionNavigation(modal);
   syncDiscussionUI();
   if (id) {
-    const selected = list.children[diffQuestions.length - 1 - diffQuestions.findIndex((q) => q.id === id)];
+    const selected = list.querySelector(`[data-discussion="${CSS.escape(id)}"]`);
     if (selected) focusDiscussion(selected, turnID);
   }
 }
@@ -3485,7 +3494,7 @@ function githubThread(c) {
   return out;
 }
 
-function resolveButton(t, what, key) {
+function resolveButton(t, what, key, comment) {
   if (!t || !(t.resolved ? t.canUnresolve : t.canResolve)) return null;
   const b = el(`<button class="na" title="${t.resolved ? "Open the thread on GitHub again" : "Resolve the thread on GitHub"}">${t.resolved ? "Unresolve on GitHub" : "Resolve on GitHub"}</button>`);
   b.onclick = async (e) => {
@@ -3495,6 +3504,9 @@ function resolveButton(t, what, key) {
     try {
       const pull = await api("Reviews.ResolveGitHubThread", t.id, !t.resolved);
       if (state.opened !== opened) return;
+      if (comment && !t.resolved && localResolution(state.view.path, comment) === false) {
+        setLocalResolution(state.view.path, comment, undefined);
+      }
       expandedDisclosures.delete(key);
       state.ghPull = pull;
       rerenderKeepScroll();
@@ -3512,7 +3524,7 @@ function resolveButton(t, what, key) {
 function resolveActions(c) {
   if (!c.github || !state.gh) return [];
   const out = [];
-  const b = resolveButton(ghMine(c), c.id, threadKey(c));
+  const b = resolveButton(ghMine(c), c.id, threadKey(c), c);
   if (b) out.push(b);
   const pull = el(`<button class="na" title="Pull reactions, replies and resolved state from GitHub">↻ GitHub</button>`);
   pull.onclick = (e) => {
@@ -4212,6 +4224,11 @@ export function moveCursor(dir, jumpTo, extend) {
 
 function activate() {
   const k = document.querySelector("#station .kcur");
+  if (k?.matches(".review-disclosure")) {
+    const summary = k.firstElementChild;
+    summary.focus({ preventScroll: true });
+    return summary.click();
+  }
   if (k) return k.click();
   const n = selectedNote();
   if (n?.kind === "decide") return act("MarkNote", n.key, "reviewed");

@@ -70,28 +70,28 @@ export function nextThread(threads, station, replies, activeID, from, stepAt, in
 }
 
 const seen = new Map();
-const resolved = new Map();
+const localResolutions = new Map();
 
 function resolutionKey(path, q) {
   return "margin.gui.resolved." + JSON.stringify([path, q.id, q.asked ?? ""]);
 }
 
-export function locallyResolved(path, q) {
+export function localResolution(path, q) {
   const key = resolutionKey(path, q);
-  if (!resolved.has(key)) {
-    let stored = false;
-    try { stored = localStorage.getItem(key) === "true"; } catch {}
-    resolved.set(key, stored);
+  if (!localResolutions.has(key)) {
+    let stored;
+    try { stored = localStorage.getItem(key); } catch {}
+    localResolutions.set(key, stored === "true" ? true : stored === "false" ? false : undefined);
   }
-  return resolved.get(key);
+  return localResolutions.get(key);
 }
 
-export function setLocallyResolved(path, q, value) {
+export function setLocalResolution(path, q, value) {
   const key = resolutionKey(path, q);
-  resolved.set(key, value);
+  localResolutions.set(key, value);
   try {
-    if (value) localStorage.setItem(key, "true");
-    else localStorage.removeItem(key);
+    if (value === undefined) localStorage.removeItem(key);
+    else localStorage.setItem(key, String(value));
   } catch {}
 }
 

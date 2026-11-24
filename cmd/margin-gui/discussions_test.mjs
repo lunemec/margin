@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { agentReply, discussionThreads, locallyResolved, nextThread, questionReply, questionSelection, readReply, setLocallyResolved, unreadReply } from "./assets/discussions.js";
+import { agentReply, discussionThreads, localResolution, nextThread, questionReply, questionSelection, readReply, setLocalResolution, unreadReply } from "./assets/discussions.js";
 
 test("next ask stays in its stop and advances through multiple threads on a line", () => {
   const drafts = [
@@ -42,15 +42,21 @@ test("local resolution survives reopening and belongs to the original discussion
     removeItem: (key) => storage.delete(key),
   };
   const comment = { id: "c1", asked: "today", resolved: false };
-  setLocallyResolved("one", comment, true);
-  assert.equal(locallyResolved("one", comment), true);
+  setLocalResolution("one", comment, true);
+  assert.equal(localResolution("one", comment), true);
   assert.equal(comment.resolved, false);
-  assert.equal(locallyResolved("other", comment), false);
-  assert.equal(locallyResolved("one", { ...comment, asked: "tomorrow" }), false);
+  assert.equal(localResolution("other", comment), undefined);
+  assert.equal(localResolution("one", { ...comment, asked: "tomorrow" }), undefined);
   const reopened = await import("./assets/discussions.js?resolution-restored");
-  assert.equal(reopened.locallyResolved("one", comment), true);
-  reopened.setLocallyResolved("one", comment, false);
-  assert.equal(reopened.locallyResolved("one", comment), false);
+  assert.equal(reopened.localResolution("one", comment), true);
+  const agentResolved = { ...comment, resolved: true };
+  reopened.setLocalResolution("one", agentResolved, false);
+  assert.equal(reopened.localResolution("one", agentResolved), false);
+  assert.equal(agentResolved.resolved, true);
+  const openedAgain = await import("./assets/discussions.js?resolution-reopened");
+  assert.equal(openedAgain.localResolution("one", agentResolved), false);
+  openedAgain.setLocalResolution("one", agentResolved, undefined);
+  assert.equal(openedAgain.localResolution("one", agentResolved), undefined);
   assert.equal(storage.size, 0);
 });
 
