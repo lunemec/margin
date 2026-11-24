@@ -56,13 +56,13 @@ export function questionSelection(part, from, end) {
   return JSON.stringify([part.file, !!part.base, rows.map((r) => (r.s ?? []).map((span) => span.t).join(""))]);
 }
 
-export function nextThread(threads, station, replies, activeID, from, stepAt) {
+export function nextThread(threads, station, replies, activeID, from, stepAt, include = () => true) {
   const order = (x) => [stepAt(x.part, x.at), x.part < 0 ? Infinity : x.part, x.at];
   const compare = (a, b) => {
     for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return a[i] < b[i] ? -1 : 1;
     return 0;
   };
-  const items = [...threads.values()].filter((q) => q.station === station && (!replies || q.reply));
+  const items = [...threads.values()].filter((q) => q.station === station && (!replies || q.reply) && include(q));
   items.sort((a, b) => compare(order(a), order(b)) || (a.asked ?? "").localeCompare(b.asked ?? "") || a.id.localeCompare(b.id, undefined, { numeric: true }));
   const i = items.findIndex((q) => q.id === activeID);
   if (i >= 0) return items.length > 1 ? items[(i + 1) % items.length] : null;
@@ -70,6 +70,30 @@ export function nextThread(threads, station, replies, activeID, from, stepAt) {
 }
 
 const seen = new Map();
+const resolved = new Map();
+
+function resolutionKey(path, q) {
+  return "margin.gui.resolved." + JSON.stringify([path, q.id, q.asked ?? ""]);
+}
+
+export function locallyResolved(path, q) {
+  const key = resolutionKey(path, q);
+  if (!resolved.has(key)) {
+    let stored = false;
+    try { stored = localStorage.getItem(key) === "true"; } catch {}
+    resolved.set(key, stored);
+  }
+  return resolved.get(key);
+}
+
+export function setLocallyResolved(path, q, value) {
+  const key = resolutionKey(path, q);
+  resolved.set(key, value);
+  try {
+    if (value) localStorage.setItem(key, "true");
+    else localStorage.removeItem(key);
+  } catch {}
+}
 
 function seenKey(path, q) {
   return "margin.gui.reply." + JSON.stringify([path, q.id, q.asked ?? ""]);

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { agentReply, discussionThreads, nextThread, questionReply, questionSelection, readReply, unreadReply } from "./assets/discussions.js";
+import { agentReply, discussionThreads, locallyResolved, nextThread, questionReply, questionSelection, readReply, setLocallyResolved, unreadReply } from "./assets/discussions.js";
 
 test("next ask stays in its stop and advances through multiple threads on a line", () => {
   const drafts = [
@@ -32,6 +32,26 @@ test("unread state belongs to the review and to this version of the reply", asyn
   const reopened = await import("./assets/discussions.js?reopened");
   assert.equal(reopened.unreadReply("one", thread), false);
   assert.equal(reopened.unreadReply("one", { ...thread, reply: { text: "Updated reply" } }), true);
+});
+
+test("local resolution survives reopening and belongs to the original discussion", async () => {
+  const storage = new Map();
+  globalThis.localStorage = {
+    getItem: (key) => storage.get(key),
+    setItem: (key, value) => storage.set(key, value),
+    removeItem: (key) => storage.delete(key),
+  };
+  const comment = { id: "c1", asked: "today", resolved: false };
+  setLocallyResolved("one", comment, true);
+  assert.equal(locallyResolved("one", comment), true);
+  assert.equal(comment.resolved, false);
+  assert.equal(locallyResolved("other", comment), false);
+  assert.equal(locallyResolved("one", { ...comment, asked: "tomorrow" }), false);
+  const reopened = await import("./assets/discussions.js?resolution-restored");
+  assert.equal(reopened.locallyResolved("one", comment), true);
+  reopened.setLocallyResolved("one", comment, false);
+  assert.equal(reopened.locallyResolved("one", comment), false);
+  assert.equal(storage.size, 0);
 });
 
 test("a thread keeps one navigation entry and tracks each saved reply", () => {

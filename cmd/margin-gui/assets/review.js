@@ -1,7 +1,7 @@
 import { Events, Clipboard } from "/wails/runtime.js";
 import { api, $, $$, state, hooks, esc, prose, md, oneLine, el, toast, errText, tail, plural, shortList, base, openModal, closeModal } from "./core.js";
 import { openAnswers, hasAnswerDraft } from "./answers.js";
-import { agentReply, discussionThreads, nextThread, questionReply, questionSelection, questionTurns, readReply, unreadReply } from "./discussions.js";
+import { agentReply, discussionThreads, locallyResolved, nextThread, questionReply, questionSelection, questionTurns, readReply, setLocallyResolved, unreadReply } from "./discussions.js";
 import { runTests, tryChange, toggleTestPanel, resetTests, statusOf, statusIcon, testHooks, results } from "./tests.js";
 
 export { closeModal };
@@ -64,6 +64,7 @@ async function loadReview(dir, arg, fresh, file, restore, browsing) {
     activeThread = "";
     commentSections = {};
     threads = new Map();
+    expandedDisclosures.clear();
     resetTests();
     endTry();
     state.view = null;
@@ -788,18 +789,30 @@ function codeRows(s, pi, from, to, opts = {}) {
     code.append(row);
     const qs = questionsByRow.get(questionRowKey(s.id, pi, line));
     if (qs) code.append(diffQuestionGroup(qs));
+    let replies;
     for (const i of notes) {
       shown.add(i);
-      code.append(noteCard(s, s.notes[i], i));
+      const n = s.notes[i];
+      const thread = threads.get(n.qid);
+      if (thread?.station === s.id && thread.part === pi && thread.at === line && threadResolved(thread) && !reader().dismissed.includes(n.key)) {
+        replies ??= new Map();
+        const cards = replies.get(thread.id) ?? [];
+        cards.push(noteCard(s, n, i, { inThread: true }));
+        replies.set(thread.id, cards);
+      } else {
+        code.append(noteCard(s, n, i));
+      }
     }
     for (const c of reader().comments) {
-      if (c.station === s.id && c.part === pi && c.at === line && (!c.resolved || activeThread === c.id || unreadReply(state.view.path, threads.get(c.id)))) code.append(commentCard(c));
+      if (c.station === s.id && c.part === pi && c.at === line) code.append(commentCard(c, { replies: replies?.get(c.id) }));
     }
     for (const t of state.ghPull?.threads ?? []) {
       if (t.station === s.id && t.path === p.file && t.line === r.n && (t.side === "base") === !!p.base) code.append(threadCard(t));
     }
     for (const q of reader().questions) {
-      if (q.station === s.id && q.part === pi && q.at === line && (!q.answered || activeThread === q.id || unreadReply(state.view.path, threads.get(q.id)))) code.append(questionCard(q));
+      if (q.station === s.id && q.part === pi && q.at === line && (!q.answered || threadResolved(q) || activeThread === q.id || unreadReply(state.view.path, threads.get(q.id)))) {
+        code.append(questionCard(q, { replies: replies?.get(q.id) }));
+      }
     }
     const cp = state.compose;
     if (cp && cp.station === s.id && cp.part === pi && cp.line === line) code.append(composer(s, p));
@@ -924,7 +937,7 @@ function noteCard(s, n, i, opts = {}) {
   const answered = rd.comments.some((c) => c.answers === n.key);
   const changed = n.changed && rd.seen?.[n.key] !== n.changed;
   const where = n.part >= 0 ? `${base(s.parts[n.part].file)}:${n.line + 1}` : "";
-  const card = el(`<div class="note ${esc(kind)}${i === state.note ? " sel" : ""}${marks.reviewed ? " is-read" : ""}${marks.dismissed ? " is-dismissed" : ""}${marks.flagged ? " is-flagged" : ""}${opts.static ? " static" : ""}" data-note="${i}">
+  const card = el(`<div class="note ${esc(kind)}${i === state.note ? " sel" : ""}${marks.reviewed ? " is-read" : ""}${marks.flagged ? " is-flagged" : ""}${opts.static ? " static" : ""}" data-note="${i}" tabindex="-1">
     ${n.q ? `<div class="q">${n.qid?.startsWith("c") ? "Your comment " + esc(n.qid) : "You asked" + (n.qid ? " " + esc(n.qid) : "")}: ${prose(n.q)}</div>` : ""}
     <span class="nnum k-${esc(noteStyle(n)[2])}">${i + 1}</span><span class="nk">${esc(noteLabel(n))}</span>${tags ? `<span class="tags">${esc(tags)}</span>` : ""}
     ${state.fresh.has(n.key) ? `<span class="badge fresh">new</span>` : ""}${changed ? `<span class="badge fresh" title="the agent changed this note since you read it">Δ changed</span>` : ""}
@@ -938,7 +951,6 @@ function noteCard(s, n, i, opts = {}) {
   if (n.qid) {
     card.dataset.discussion = n.qid;
     card.dataset.discussionReply = "";
-    card.tabIndex = -1;
   }
   card.onclick = () => {
     state.fresh.delete(n.key);
@@ -967,8 +979,14 @@ function noteCard(s, n, i, opts = {}) {
   if ((n.kind === "question" || n.unbacked) && !n.q && n.part >= 0) {
     btn(answered ? "✓ Answered" : "Answer", "Answer the agent's question in a comment", answered, () => openComposer(s.id, n.part, n.line, { answers: n.key }));
   }
-  btn(marks.dismissed ? "Restore" : "Dismiss", "Not useful (x)", marks.dismissed, () => act("MarkNote", n.key, "dismissed"));
+  btn(marks.dismissed ? "Restore" : "Dismiss", "Dismiss or restore this note (x)", marks.dismissed, () => markDismissed(n));
   btn("Copy", "Copy the note (y)", false, () => copy(noteText(s, i), "note " + (i + 1)));
+  if (marks.dismissed) return reviewDisclosure(card, `note:${n.key}`, "dismissed note " + (i + 1), { thread: n.qid });
+  const thread = threads.get(n.qid);
+  if (thread && !opts.inThread) {
+    actions.append(localResolveAction(thread));
+    return threadDisclosure(card, thread, "answer");
+  }
   return card;
 }
 
@@ -995,7 +1013,8 @@ export function focusNote(i) {
   const card = document.querySelector(`#station .note[data-note="${i}"]`);
   if (!card) return;
   card.classList.add("sel");
-  card.scrollIntoView({ block: "center", behavior: "smooth" });
+  const target = card.closest(".review-disclosure:not([open])")?.firstElementChild ?? card;
+  target.scrollIntoView({ block: "center", behavior: "smooth" });
 }
 
 function stepNote(dir) {
@@ -1022,11 +1041,20 @@ function selectedNote() {
 function noteMark(mark) {
   const n = selectedNote();
   if (!n) return toast("No note selected: click one, or step to one with ] and [.");
-  const was = reader()[mark]?.includes(n.key);
-  act("MarkNote", n.key, mark).then((ok) => {
-    if (!ok || mark !== "dismissed") return;
-    toast(was ? `note ${state.note + 1} restored` : `note ${state.note + 1} dismissed as not useful`);
-  });
+  if (mark === "dismissed") return markDismissed(n);
+  return act("MarkNote", n.key, mark);
+}
+
+async function markDismissed(n) {
+  const view = state.view, s = cur();
+  const key = `note:${n.key}`;
+  const was = reader().dismissed.includes(n.key);
+  expandedDisclosures.delete(key);
+  if (!await act("MarkNote", n.key, "dismissed") || state.view !== view || cur() !== s) return;
+  const i = s.notes.indexOf(n);
+  if (!was) state.note = i;
+  const target = was ? $(`#station .note[data-note="${i}"]`) : disclosureSummary(key);
+  target?.focus({ preventScroll: true });
 }
 
 function xKey() {
@@ -1122,10 +1150,10 @@ function commentCard(c, opts = {}) {
     };
     actions.append(del);
   }
-  actions.append(...githubActions(c), ...resolveActions(c));
+  actions.append(localResolveAction(c), ...githubActions(c), ...resolveActions(c));
   card.append(actions);
   if (opts.jump) card.onclick = opts.jump;
-  return card;
+  return threadDisclosure(card, c, "comment", opts);
 }
 
 // startEdit opens a draft comment's words in its card; one draft is edited at a time.
@@ -1197,9 +1225,57 @@ function questionCard(q, opts = {}) {
   const card = el(`<div class="comment question${opts.static ? " static" : ""}" data-discussion="${esc(q.id)}" tabindex="-1">
     ${opts.where ? `<div class="muted small">${esc(q.file)}:${q.line}</div>` : ""}
     <span class="ck">${esc(q.id)} · you asked</span><span class="badge">${q.answered ? "answered" : state.agentLive ? "waiting for the agent" : "saved; start the agent"}</span>
-    <div>${prose(q.text)}</div></div>`);
+    <div>${prose(q.text)}</div><div class="note-actions"></div></div>`);
+  card.querySelector(".note-actions").append(localResolveAction(q));
   if (opts.jump) card.onclick = opts.jump;
-  return card;
+  return threadDisclosure(card, q, "question", opts);
+}
+
+const expandedDisclosures = new Set();
+const threadKey = (q) => `thread:${q.id}`;
+const disclosureSummary = (key) => $(`#station [data-disclosure="${CSS.escape(key)}"] > summary`);
+const threadResolved = (q) => q.resolved || ghMine(q)?.resolved || locallyResolved(state.view.path, q);
+
+function reviewDisclosure(card, key, label, { thread, replies = [] } = {}) {
+  const details = el(`<details class="review-disclosure" data-disclosure="${esc(key)}"><summary>
+    <span class="disclosure-show">Show</span><span class="disclosure-hide">Hide</span> ${esc(label)}
+    ${thread ? '<span class="badge fresh disclosure-unread hidden">New reply</span>' : ""}</summary></details>`);
+  if (thread) details.dataset.disclosureThread = thread;
+  if (card.matches(".static")) details.classList.add("static");
+  details.open = expandedDisclosures.has(key);
+  details.ontoggle = () => {
+    if (!details.isConnected) return;
+    if (details.open) expandedDisclosures.add(key);
+    else expandedDisclosures.delete(key);
+  };
+  details.append(card, ...replies);
+  return details;
+}
+
+function threadDisclosure(card, q, type, opts = {}) {
+  if (!threadResolved(q)) return card;
+  const id = /^[cq]\d+$/.test(q.id) ? " " + q.id : "";
+  const where = opts.where ? ` · ${base(q.file)}:${q.line}` : "";
+  return reviewDisclosure(card, threadKey(q), `resolved ${type}${id}${where}`, { thread: q.id, replies: opts.replies });
+}
+
+function localResolveAction(q) {
+  const path = state.view.path;
+  const local = locallyResolved(path, q);
+  const button = el(`<button class="na local-resolve">${local ? "Unresolve locally" : "Resolve"}</button>`);
+  button.title = local ? "Keep this discussion expanded locally" : "Collapse this discussion locally";
+  if (!local && threadResolved(q)) button.hidden = true;
+  button.onclick = (e) => {
+    e.stopPropagation();
+    if (followUpDrafts.has(JSON.stringify([path, q.id]))) return toast("Finish or cancel your follow-up before resolving.");
+    const key = threadKey(q);
+    expandedDisclosures.delete(key);
+    setLocallyResolved(path, q, !local);
+    renderKeepScroll();
+    const target = disclosureSummary(key) ?? $(`#station [data-discussion="${CSS.escape(q.id)}"]`);
+    target?.focus({ preventScroll: true });
+  };
+  return button;
 }
 
 let diffQuestions = [], questionFetch = 0;
@@ -1261,7 +1337,9 @@ function nextDiscussionTarget(replies) {
     [line, s.parts[part]?.start].map((at) => stepOf(s, part, at)).find((i) => i >= 0) ?? Infinity;
   const sel = state.sel?.station === s.id ? state.sel : null;
   const from = sel ? [rank(sel.part, sel.line), sel.part, sel.line] : [guided() ? state.step : 0, -1, -1];
-  return nextThread(threads, s.id, replies, replies && !activeReply ? "" : activeThread, from, rank);
+  const path = state.view.path;
+  return nextThread(threads, s.id, replies, replies && !activeReply ? "" : activeThread, from, rank,
+    (q) => !threadResolved(q) || (replies && unreadReply(path, q)));
 }
 
 function updateDiscussionControls() {
@@ -1290,6 +1368,9 @@ function syncDiscussionUI() {
     const n = stops.get(badge.dataset.replyStop) ?? 0;
     badge.classList.toggle("hidden", !n);
     badge.textContent = n === 1 ? "New reply" : `${n} new replies`;
+  }
+  for (const details of $$("[data-disclosure-thread]")) {
+    details.querySelector(".disclosure-unread").classList.toggle("hidden", !unread.has(details.dataset.disclosureThread));
   }
   for (const card of $$("[data-discussion]")) {
     const id = card.dataset.discussion, q = threads.get(id);
@@ -1422,6 +1503,9 @@ async function jumpDiscussion(review, id, reply, turnID) {
 
 function discussionFocus() {
   const active = document.activeElement;
+  if (active?.matches("#station .review-disclosure > summary")) {
+    return { disclosure: active.parentElement.dataset.disclosure };
+  }
   const card = active?.closest("#station [data-discussion], .diff-questions-list [data-discussion]");
   if (!card) return null;
   const caret = active.matches(".question-follow-up textarea") ? [active.selectionStart, active.selectionEnd] : null;
@@ -1432,6 +1516,7 @@ function discussionFocus() {
 
 function restoreDiscussionFocus(focus) {
   if (!focus) return;
+  if (focus.disclosure) return disclosureSummary(focus.disclosure)?.focus({ preventScroll: true });
   const replySelector = focus.reply ? "[data-discussion-reply]" : ":not([data-discussion-reply])";
   const scope = focus.modal ? ".diff-questions-list" : "#station";
   const card = $(`${scope} [data-discussion="${CSS.escape(focus.id)}"]${replySelector}`);
@@ -1442,6 +1527,11 @@ function restoreDiscussionFocus(focus) {
 }
 
 function focusDiscussion(card, turnID) {
+  const details = card.closest(".review-disclosure");
+  if (details) {
+    expandedDisclosures.add(details.dataset.disclosure);
+    details.open = true;
+  }
   const target = turnID && card.querySelector(`[data-question-turn="${CSS.escape(turnID)}"]`);
   (target || card).focus({ preventScroll: true });
   (target || card).scrollIntoView({ block: target ? "start" : "center" });
@@ -1537,6 +1627,7 @@ function diffQuestionCard(q, review = "", selected = false) {
   }
   const latest = turns.at(-1);
   const actions = el(`<div class="question-thread-actions"></div>`);
+  if (!review) actions.append(localResolveAction(q));
   if (latest.status === "failed" || latest.status === "interrupted") {
     const retry = el(`<button class="small">Retry</button>`);
     retry.onclick = async () => {
@@ -1556,7 +1647,7 @@ function diffQuestionCard(q, review = "", selected = false) {
   }
   if (q.answer && latest.status !== "queued" && latest.status !== "answering") actions.append(followUpComposer(q.id, path));
   if (actions.childElementCount) card.append(actions);
-  return card;
+  return review ? card : threadDisclosure(card, q, "question");
 }
 
 function followUpComposer(thread, path) {
@@ -2246,14 +2337,14 @@ function settleRow(s, n, i, where = "") {
       }
       openComposer(s.id, n.part, n.line, { answers: n.key });
     }, answered));
-    row.append(btn("Dismiss", () => act("MarkNote", n.key, "dismissed")));
+    row.append(btn("Dismiss", () => markDismissed(n)));
   } else {
     const flagged = rd.flagged.includes(n.key);
     row.append(el(`<span class="sr-mark">${flagged ? "⚑" : "!"}</span>`), el(`<span class="sr-text">${text}</span>`), btn(flagged ? "Agreed" : "Agree", () => act("MarkNote", n.key, "flagged"), flagged));
     const sent = flagged && fixSent(n.key);
     if (sent) row.append(el(`<span class="muted small">sent to fix as ${esc(sent.id)}</span>`));
     else if (flagged) row.append(btn("Have it fixed (P)", sendFixes));
-    row.append(btn("Dismiss", () => act("MarkNote", n.key, "dismissed")));
+    row.append(btn("Dismiss", () => markDismissed(n)));
   }
   row.onclick = () => {
     if (walking() && n.part >= 0) {
@@ -2392,7 +2483,7 @@ function renderWhole(box, s) {
   if (s.flow) box.append(el(`<pre class="flow">${esc(s.flow)}</pre>`));
   if (s.checksAll?.length) box.append(el(`<div class="checks"><h4>After this stop you should be able to answer</h4><ol>${s.checksAll.map((c) => `<li>${prose(c)}</li>`).join("")}</ol></div>`));
   if (s.examples?.length) box.append(examplesTable(s));
-  const calls = s.notes.map((n, i) => [n, i]).filter(([n]) => n.kind === "decide" && noteVisible(s, n));
+  const calls = s.notes.map((n, i) => [n, i]).filter(([n]) => n.kind === "decide" && noteVisible(s, n) && !reader().dismissed.includes(n.key));
   if (calls.length) {
     const c = el(`<div class="settle"><h4>Your calls in this stop</h4></div>`);
     for (const [n, i] of calls) c.append(settleRow(s, n, i, n.part >= 0 ? ` (${base(s.parts[n.part].file)}:${n.line + 1})` : ""));
@@ -3394,7 +3485,7 @@ function githubThread(c) {
   return out;
 }
 
-function resolveButton(t, what) {
+function resolveButton(t, what, key) {
   if (!t || !(t.resolved ? t.canUnresolve : t.canResolve)) return null;
   const b = el(`<button class="na" title="${t.resolved ? "Open the thread on GitHub again" : "Resolve the thread on GitHub"}">${t.resolved ? "Unresolve on GitHub" : "Resolve on GitHub"}</button>`);
   b.onclick = async (e) => {
@@ -3404,9 +3495,11 @@ function resolveButton(t, what) {
     try {
       const pull = await api("Reviews.ResolveGitHubThread", t.id, !t.resolved);
       if (state.opened !== opened) return;
+      expandedDisclosures.delete(key);
       state.ghPull = pull;
       rerenderKeepScroll();
       if (document.querySelector(".modal.gh-panel")) openGitHubPanel();
+      else disclosureSummary(key)?.focus({ preventScroll: true });
       toast(`${what} ${t.resolved ? "opened again" : "resolved"} on GitHub`);
     } catch (err) {
       b.disabled = false;
@@ -3419,7 +3512,7 @@ function resolveButton(t, what) {
 function resolveActions(c) {
   if (!c.github || !state.gh) return [];
   const out = [];
-  const b = resolveButton(ghMine(c), c.id);
+  const b = resolveButton(ghMine(c), c.id, threadKey(c));
   if (b) out.push(b);
   const pull = el(`<button class="na" title="Pull reactions, replies and resolved state from GitHub">↻ GitHub</button>`);
   pull.onclick = (e) => {
@@ -3447,7 +3540,8 @@ function threadCard(t, opts = {}) {
     openURL(first.url);
   };
   actions.append(open);
-  const rb = resolveButton(t, "thread");
+  const key = `github:${t.id}`;
+  const rb = resolveButton(t, "thread", key);
   if (rb) actions.append(rb);
   if (opts.jump && t.station) {
     const j = el(`<button class="na" title="Go to its line in the review">Go to line</button>`);
@@ -3459,7 +3553,7 @@ function threadCard(t, opts = {}) {
     actions.append(j);
   }
   card.append(actions);
-  if (t.resolved && !opts.static) card.classList.add("gh-collapsed");
+  if (t.resolved && !opts.static) return reviewDisclosure(card, key, `resolved GitHub thread by ${first.author || "ghost"}`);
   card.querySelector(".ck").onclick = (e) => {
     e.stopPropagation();
     card.classList.toggle("gh-collapsed");
@@ -3788,7 +3882,9 @@ export function reviewKey(e) {
   if (!state.view) return false;
   const k = e.key;
   const s = cur();
-  if ((k === "Enter" || k === " ") && e.target.closest?.("button, summary")?.closest(".discussion-nav, .jump-reply, .question-thread-actions, .diff-questions-list, .answers")) return false;
+  if ((k === "Enter" || k === " ") && e.target.closest?.("button, summary")?.closest(
+    ".discussion-nav, .jump-reply, .question-thread-actions, .diff-questions-list, .answers, .review-disclosure, .note-actions",
+  )) return false;
   if (k === "Tab") return false;
   if (document.querySelector(".modal-back")) return modalKey(e);
   const ov = s.kind === "overview" && guided();

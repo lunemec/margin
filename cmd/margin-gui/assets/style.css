@@ -560,8 +560,6 @@ button.na.on { color: var(--accent); border-color: var(--primary-line); }
 .note.is-read { opacity: .62; }
 .note.is-read:hover { opacity: 1; }
 .note.is-flagged { box-shadow: inset 0 0 0 1px var(--flag-ring); }
-.note.is-dismissed { opacity: .4; }
-.note.is-dismissed > div:not(.note-actions) { display: none; }
 
 .comment {
   margin: 4px 16px 8px 56px;
@@ -715,6 +713,24 @@ pre.flow { font: 12.5px/1.5 var(--mono); color: var(--flow); background: var(--b
 .unread-reply { border-left-color: var(--accent) !important; }
 [data-discussion]:focus, .saved-discussion:focus { outline: 2px solid var(--accent); outline-offset: -2px; }
 .jump-reply { margin: 6px 0 0 4px; }
+.review-disclosure > summary {
+  width: fit-content;
+  margin: 4px 0;
+  padding: 2px 9px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  border-radius: 4px;
+  background: var(--bg-2);
+  color: var(--fg);
+  font: 12px/1.5 var(--sans);
+  cursor: pointer;
+}
+.code .review-disclosure:not(.static) > summary { position: sticky; left: 92px; margin-left: 92px; }
+.review-disclosure > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.review-disclosure:not([open]) > summary .disclosure-hide,
+.review-disclosure[open] > summary .disclosure-show,
+.review-disclosure[open] > summary .disclosure-unread { display: none; }
+.disclosure-unread { margin-left: 6px; }
 h4.sub { margin: 14px 0 4px; font-size: 13px; }
 
 .modal-back { position: fixed; inset: 0; background: rgba(0, 0, 0, .55); display: grid; place-items: center; z-index: 40; }
