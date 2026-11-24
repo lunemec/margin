@@ -103,7 +103,6 @@ export function renderSide() {
         <span class="count">${multi ? r.worktrees.length + " worktrees" : ""}${dirty ? ` <span class="dirty" title="changed files">●${dirty}</span>` : ""}</span></button>`);
       head.onclick = () => {
         const w = r.worktrees.find((w) => w.main) ?? r.worktrees[0];
-        $("#workspace").classList.add("focus");
         selectWorktree(w, r);
         $("#wt-title").focus();
       };

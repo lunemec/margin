@@ -67,8 +67,8 @@ The **sidebar** holds everything you work on:
   (found up to two levels deep). A yellow `●` counts changed files across the repository's
   worktrees. The filter box narrows the list by repository, branch or path.
 
-Click a repository to open its full-width picker on the main worktree. Use the **Worktree** selector
-to switch checkouts, or the sidebar button to switch repositories. The picker shows:
+Click a repository to open its picker in the main pane on the main worktree. Use the **Worktree**
+selector to switch checkouts, or pick another repository in the sidebar. The picker shows:
 
 - **Pull requests** first when the GitHub CLI `gh` is installed. A pull request whose head commit
   is missing locally offers *Fetch and review*, which runs `git fetch origin pull/N/head` and
