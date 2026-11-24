@@ -16,6 +16,10 @@ const reader = () =>
   state.view?.reader ?? { verdicts: {}, comments: [], questions: [], reviewed: [], flagged: [], dismissed: [], revealed: [], visited: [], labels: [], seen: {} };
 const cur = () => state.view?.stations[state.station];
 const guided = () => !reader().full;
+const modeButtons = $$("#reading-mode button");
+const noteFilter = $("#note-filter");
+for (const button of modeButtons) button.onclick = () => setReadingMode(button.dataset.full === "true");
+noteFilter.onchange = () => setNoteFilter(noteFilter.value);
 const walking = () => guided() && cur()?.kind === "code";
 const partKey = (s, pi) => `${s.id}|${pi}`;
 const partData = (s, pi) => state.parts[partKey(s, pi)] ?? s.parts[pi];
@@ -74,7 +78,7 @@ async function loadReview(dir, arg, fresh, file, restore, browsing) {
     state.ghErr = "";
     state.ghPull = null;
     Object.assign(state, { station: 0, note: -1, step: 0, sel: null, compose: null, editing: null, block: null, parts: {}, expand: {}, whole: {}, around: {}, known: null,
-      query: "", spot: -1, spotLines: null, filter: 0 });
+      query: "", spot: -1, spotLines: null, filter: "All notes" });
     state.fresh = new Set();
   }
   hooks.reviewOpened?.();
@@ -395,11 +399,16 @@ function blind(s) {
   return s?.kind === "code" && s.risk === "high" && r.blind && !r.revealed.includes(s.id);
 }
 
+const filterDescriptions = {
+  "All notes": "Show every kind of agent note, including context and positive observations.",
+  "Issues, questions & decisions": "Show reported issues and anything the agent asks you to answer or decide.",
+  "Issues with evidence": "Show only issues the agent backed with evidence.",
+};
+
 function filters() {
-  const out = ["all notes", "what asks you", "problems only"];
   const areas = new Set();
-  for (const s of state.view?.stations ?? []) for (const n of s.notes) if (n.focus) areas.add("focus: " + n.focus);
-  return out.concat([...areas].sort());
+  for (const s of state.view?.stations ?? []) for (const n of s.notes) if (n.focus) areas.add("Focus: " + n.focus);
+  return Object.keys(filterDescriptions).concat([...areas].sort());
 }
 
 const asks = (n) => ["issue", "question", "decide"].includes(n.kind);
@@ -407,14 +416,14 @@ const asks = (n) => ["issue", "question", "decide"].includes(n.kind);
 function noteVisible(s, n) {
   if (blind(s)) return false;
   switch (state.filter) {
-    case 0:
+    case "All notes":
       return true;
-    case 1:
+    case "Issues, questions & decisions":
       return asks(n);
-    case 2:
+    case "Issues with evidence":
       return n.kind === "issue" && !n.unbacked;
   }
-  return "focus: " + n.focus === filters()[state.filter];
+  return !!n.focus && "Focus: " + n.focus === state.filter;
 }
 
 // Header, phases and the stop list
@@ -467,8 +476,22 @@ export function renderReview() {
 }
 
 function renderToolbar() {
+  for (const button of modeButtons) button.setAttribute("aria-pressed", button.dataset.full === String(!guided()));
+  const choices = filters();
+  if (choices.length !== noteFilter.length || choices.some((label, i) => label !== noteFilter.options[i].value)) {
+    noteFilter.replaceChildren(...choices.map((label) => {
+      const option = new Option(label, label);
+      option.title = filterDescriptions[label] ?? `Show only notes tagged ${label.slice("Focus: ".length).replaceAll("-", " ")}.`;
+      return option;
+    }));
+  }
+  if (!choices.includes(state.filter)) state.filter = choices[0];
+  if (noteFilter.value !== state.filter) noteFilter.value = state.filter;
+  const filterHint = noteFilter.selectedOptions[0].title + " Press F to cycle filters.";
+  if (noteFilter.title !== filterHint) noteFilter.title = filterHint;
+
   const s = cur();
-  const tb = $("#toolbar");
+  const tb = $("#toolbar-actions");
   tb.innerHTML = "";
   const btn = (label, title, on, fn, cls = "") => {
     const b = el(`<button class="tb${on ? " on" : ""} ${cls}" title="${esc(title)}">${label}</button>`);
@@ -476,11 +499,9 @@ function renderToolbar() {
     tb.append(b);
     return b;
   };
-  btn(guided() ? "Guided walk" : "Whole stop", "Switch between the guided walk and whole stops (w)", false, toggleGuide);
-  btn(filters()[state.filter] ?? "all notes", "Which notes to show (F)", state.filter > 0, cycleFilter);
   btn("Removed", "Show removed lines (d)", state.showGhosts, () => toggle("showGhosts"));
   btn("Split", "Old and new side by side (s)", state.split, () => toggle("split"));
-  btn("Notes", "Show the agent's notes (n)", state.showNotes, () => toggle("showNotes"));
+  btn("Show notes", "Show the agent's note cards (n)", state.showNotes, () => toggle("showNotes"));
   if (!guided()) btn("Fold", "Fold unchanged stretches (z)", !state.unfold, () => toggle("unfold"));
   btn("Blind", "Hide the agent's notes on high-risk stops until you revealed them", reader().blind, () => act("SetBlind", !reader().blind));
   if (blind(s)) btn("Reveal notes", "Show the agent's notes on this stop (v)", false, reveal, "warn");
@@ -810,7 +831,9 @@ function codeRows(s, pi, from, to, opts = {}) {
       if (t.station === s.id && t.path === p.file && t.line === r.n && (t.side === "base") === !!p.base) code.append(threadCard(t));
     }
     for (const q of reader().questions) {
-      if (q.station === s.id && q.part === pi && q.at === line && (!q.answered || threadResolved(q) || activeThread === q.id || unreadReply(state.view.path, threads.get(q.id)))) {
+      if (q.station !== s.id || q.part !== pi || q.at !== line) continue;
+      const keptOpen = localResolution(state.view.path, q) === false;
+      if (!q.answered || keptOpen || threadResolved(q) || activeThread === q.id || unreadReply(state.view.path, threads.get(q.id))) {
         code.append(questionCard(q, { replies: replies?.get(q.id) }));
       }
     }
@@ -2134,21 +2157,25 @@ function enterStep() {
   }
 }
 
-function toggleGuide() {
+let changingMode;
+
+async function setReadingMode(full) {
+  const opened = state.opened;
+  if (!state.view || !opened || opened.restoringPosition || full === !guided() || changingMode === opened) return;
+  changingMode = opened;
+  const ok = await act("SetFull", full);
+  if (changingMode === opened) changingMode = undefined;
+  if (!ok || state.opened !== opened || full !== !guided()) return;
+
   const s = cur();
-  const full = !reader().full;
-  if (!full && s?.kind === "code" && state.sel?.station === s.id) {
-    const i = stepOf(s, state.sel.part, state.sel.line);
-    state.step = i >= 0 ? i : 0;
-  } else {
-    state.step = 0;
+  const sel = state.sel?.station === s?.id ? state.sel : null;
+  const step = !full && s?.kind === "code" && sel ? Math.max(0, stepOf(s, sel.part, sel.line)) : 0;
+  if (step !== state.step) {
+    state.step = step;
+    if (!full) renderKeepScroll();
   }
-  reader().full = full;
-  act("SetFull", full).then(() => {
-    const sel = state.sel;
-    if (sel) document.querySelector(`#station .row[data-part="${sel.part}"][data-line="${sel.line}"]`)?.scrollIntoView({ block: "center" });
-  });
-  toast(full ? "Whole stop · w goes back to the guided walk" : "Guided: one step at a time · space next · b back · w whole stop");
+  if (sel) rowAt(sel.part, sel.line)?.scrollIntoView({ block: "center" });
+  toast(full ? "Entire stop · w switches to step by step" : "Step by step · space next · b back · w entire stop");
 }
 
 function progress(s) {
@@ -3366,9 +3393,14 @@ function nextFresh() {
 // Filters, blind mode
 
 function cycleFilter() {
-  state.filter = (state.filter + 1) % filters().length;
-  toast("Showing " + filters()[state.filter]);
-  renderReview();
+  const choices = filters();
+  setNoteFilter(choices[(choices.indexOf(state.filter) + 1) % choices.length]);
+}
+
+function setNoteFilter(filter) {
+  state.filter = filter;
+  toast("Showing " + filter);
+  rerenderKeepScroll();
 }
 
 function reveal() {
@@ -3863,9 +3895,9 @@ async function openExport() {
 }
 
 const helpKeys = [
-  ["Walk", [["space", "next step; at the end of a stop, the next stop"], ["b", "previous step"], ["w", "guided walk or whole stop"], ["e", "more of the stop card or overview; on a draft comment, edit it"], ["y n ?", "answer the orient question (overview)"]]],
+  ["Walk", [["space", "next step; at the end of a stop, the next stop"], ["b", "previous step"], ["w", "step by step or entire stop"], ["e", "more of the stop card or overview; on a draft comment, edit it"], ["y n ?", "answer the orient question (overview)"]]],
   ["Move", [["} {", "next / previous stop"], ["] [", "next / previous note"], ["j k", "move the selected line"], ["J K shift+click", "select a block of lines"], ["ctrl+d ctrl+u", "half a page down / up"], ["g G", "top / bottom"], ["h l 0", "scroll code sideways / back"], ["N", "next new note (or previous match)"], ["L", "follow the note the selected note mentions (stop:n); again for the next one"], ["ctrl+o", "back to where you followed a mention from"]]],
-  ["Judge", [["1 2 3", "verdict: looks good / needs changes / not sure"], ["space", "mark the selected note read (whole stop)"], ["?", "agree with the selected problem"], ["P", "ask the agent to fix the problems you agreed with and the stops that need changes"], ["x", "dismiss the selected note"], ["enter", "tick the selected call"], ["v", "reveal notes in blind mode"]]],
+  ["Judge", [["1 2 3", "verdict: looks good / needs changes / not sure"], ["space", "mark the selected note read (entire stop)"], ["?", "agree with the selected problem"], ["P", "ask the agent to fix the problems you agreed with and the stops that need changes"], ["x", "dismiss the selected note"], ["enter", "tick the selected call"], ["v", "reveal notes in blind mode"]]],
   ["Talk", [["c", "comment on the selected line (draft); Edit on its card rewords it"], ["S", "send all drafts to the agent"], ["A", "the agent's answers to your comments: read, edit, reply"], ["a", "ask the agent about the selected line"], ["y Y", "copy the note / the whole stop"], ["`", "focus the agent terminal; ctrl+esc leaves it"]]],
   ["See", [["/", "search; n N next / previous"], ["F", "filter notes"], ["n", "show or hide notes"], ["d", "removed lines"], ["s", "side by side"], ["z", "fold unchanged code"], ["+ -", "more / less context on the selected part"], ["f", "whole file of the selected part"], ["t", "tests that run the selected line"], ["T", "run them (the stop's tests when no line is selected)"], ["i", "try a change to the selected line or block: edit or delete it, its tests run against that, then it is put back"], ["o", "show or hide the test output"], ["u U", "next / previous untested change"], ["esc", "end search or spotlight, close an overlay"], ["r", "reload"], ["\\", "show or hide the sidebar"], ["ctrl+k", "go to a repository, worktree, branch or review"], ["ctrl+,", "settings"]]],
 ];
@@ -3885,6 +3917,7 @@ function pageMove(dir) {
   if (first) {
     const items = navItems();
     items.forEach((x) => x.classList.remove("kcur"));
+    releaseDisclosureFocus(first);
     if (first.dataset.line !== undefined) selectRow(cur().id, +first.dataset.part, +first.dataset.line, false);
     else first.classList.add("kcur");
   }
@@ -3895,14 +3928,14 @@ export function reviewKey(e) {
   const k = e.key;
   const s = cur();
   if ((k === "Enter" || k === " ") && e.target.closest?.("button, summary")?.closest(
-    ".discussion-nav, .jump-reply, .question-thread-actions, .diff-questions-list, .answers, .review-disclosure, .note-actions",
+    "#reading-mode, .discussion-nav, .jump-reply, .question-thread-actions, .diff-questions-list, .answers, .review-disclosure, .note-actions",
   )) return false;
   if (k === "Tab") return false;
   if (document.querySelector(".modal-back")) return modalKey(e);
   const ov = s.kind === "overview" && guided();
   const sel = state.sel && state.sel.station === s.id ? state.sel : null;
   const keys = {
-    w: toggleGuide,
+    w: () => setReadingMode(guided()),
     e: () => {
       if (editKey(s, sel)) return;
       state.more = !state.more;
@@ -3953,7 +3986,7 @@ export function reviewKey(e) {
     F: cycleFilter,
     d: () => toggle("showGhosts"),
     s: () => toggle("split"),
-    z: () => guided() ? toast("Folding is available in Whole stop view.") : toggle("unfold"),
+    z: () => guided() ? toast("Switch to Entire stop to fold unchanged code.") : toggle("unfold"),
     "/": () => document.querySelector("#search")?.focus(),
     Escape: () => {
       if (state.query) return endSearch();
@@ -4156,9 +4189,9 @@ function pace() {
 function viewHint() {
   const s = cur();
   if (guided() && s.kind === "overview") return "y n ? answer · e more · ";
-  if (guided() && s.kind !== "code") return "space next · w whole stops · ";
+  if (guided() && s.kind !== "code") return "space next · w entire stop · ";
   if (s.kind !== "code") return "";
-  if (walking()) return "space next · b back · e more · w whole stop · ";
+  if (walking()) return "space next · b back · e more · w entire stop · ";
   if (state.split) return "s one column · ";
   return state.showGhosts ? "d hide removed · s side by side · " : "d show removed · s side by side · ";
 }
@@ -4186,7 +4219,6 @@ export function renderStatus() {
   if (c.to_fix) pills.push(`<span class="pill p-issue">⚑ ${c.to_fix} to fix · P sends</span>`);
   if (c.open_questions) pills.push(`<span class="pill m-chg">${c.open_questions} waiting for the agent</span>`);
   if (cur()?.kind === "code" && !state.showGhosts && !state.split) pills.push(`<span class="pill p-info">removed lines hidden</span>`);
-  if (state.filter > 0) pills.push(`<span class="pill p-info">${esc(filters()[state.filter])}</span>`);
   if (state.query) pills.push(`<span class="pill p-match">/${esc(state.query)} · n N · esc</span>`);
   const [p, warn] = pace();
   pills.push(`<span class="pill${warn ? " m-chg" : " muted"}">${esc(p)}</span>`);
@@ -4201,6 +4233,11 @@ function navItems() {
   return $$("#station .row[data-line], #station .navable, #station .vb");
 }
 
+function releaseDisclosureFocus(next) {
+  const focused = document.activeElement;
+  if (focused?.matches("#station .review-disclosure > summary") && !next.contains(focused)) focused.blur();
+}
+
 export function moveCursor(dir, jumpTo, extend) {
   const items = navItems();
   if (!items.length) return;
@@ -4212,8 +4249,7 @@ export function moveCursor(dir, jumpTo, extend) {
   let next = jumpTo === "first" ? 0 : jumpTo === "last" ? items.length - 1 : at < 0 ? (dir > 0 ? 0 : items.length - 1) : Math.max(0, Math.min(items.length - 1, at + dir));
   items.forEach((x) => x.classList.remove("kcur"));
   const it = items[next];
-  const focused = document.activeElement;
-  if (focused?.matches("#station .review-disclosure > summary") && !it.contains(focused)) focused.blur();
+  releaseDisclosureFocus(it);
   if (it.dataset.line !== undefined) {
     selectRow(cur().id, +it.dataset.part, +it.dataset.line, false, extend);
   } else {

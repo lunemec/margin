@@ -94,9 +94,13 @@ with pictures. In short:
 
 - **Orient → Walk → Decide.** The overview says what the change is for and what it does, shows the
   route through the stops with their risk and size, and asks whether the change makes sense done
-  this way (`y`, `n`, `?`). Each stop is then walked one step at a time: its brief, code to know
-  first, each change with the agent's notes, housekeeping, and the wrap-up where you give your
-  verdict (`1` good, `2` needs changes, `3` not sure). `w` shows whole stops instead.
+  this way (`y`, `n`, `?`). A stop groups related changes. **Step by step** takes you through the
+  brief, background code, changes with notes, and verdict (`1` good, `2` needs changes, `3` not sure).
+  **Entire stop** shows that group of changes on one page. Switch views with `w`.
+- **Note filter.** **All notes** includes every kind of agent note. **Issues, questions & decisions**
+  includes reported issues, questions, and decisions for you to make. **Issues with evidence**
+  includes only issues that cite evidence. Choose a focus area to see notes tagged with that topic.
+  The filter works in either reading view. Press `F` to cycle through the filters.
 - **Your side.** Comment on a line with `c` (pick a kind: issue, suggestion, question, nitpick,
   praise, thought; `!` makes it blocking). Comments are drafts until `S` sends them all to the
   agent; until then *Edit* on a draft (or `e`) rewords it. Ask the agent about a line with `a`. Mark notes read, agree with a problem (`?`), dismiss
@@ -104,7 +108,7 @@ with pictures. In short:
   problem or giving a stop "needs changes" only marks it; **Ask to fix** (`P`) in the top bar or
   the recap hands them to the agent (a stop with your comments on it as the brief), and each comes
   back as a comment it resolves.
-- **Seeing more.** Search (`/`), note filters (`F`), folding (`z`), removed lines (`d`), side by side
+- **Seeing more.** Search (`/`), folding (`z`), removed lines (`d`), side by side
   (`s`), more context (`+` `-`) or the whole file (`f`), blind mode, callers and history around a
   stop, per-test coverage with the tests that run a line (`t`), a spotlight on one test, untested
   changes (`u`), the Tests stop, copying a note or a stop (`y` `Y`), and export for posting.

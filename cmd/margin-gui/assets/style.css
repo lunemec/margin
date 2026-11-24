@@ -625,6 +625,13 @@ button.chip.chip-issue.on { background: var(--issue-tint); border-color: var(--i
 .st .num .vdot { margin-top: 4px; }
 
 #toolbar { display: flex; align-items: center; gap: 4px; padding: 5px 12px; border-bottom: 1px solid var(--line); background: var(--bg-1); flex: none; flex-wrap: wrap; }
+#toolbar-actions { display: contents; }
+#reading-mode { display: inline-grid; grid-template-columns: 1fr 1fr; gap: 2px; padding: 2px; border-radius: 8px; background: var(--bg); }
+#reading-mode button { padding: 2px 9px; font-size: 12px; white-space: nowrap; background: transparent; border-color: transparent; color: var(--fg-dim); }
+#reading-mode button:hover { color: var(--fg); }
+#reading-mode button[aria-pressed="true"] { background: var(--primary-bg); color: var(--on-primary); font-weight: 600; }
+#note-filter { max-width: min(100%, 16rem); color: var(--fg); background: var(--bg-2); border: 1px solid var(--line); border-radius: 6px; font: 12px var(--sans); padding: 3px 5px; cursor: pointer; }
+#reading-mode button:focus-visible, #note-filter:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 button.tb { padding: 2px 9px; font-size: 12px; background: transparent; color: var(--fg-dim); }
 button.tb.on { color: var(--fg); background: var(--bg-3); border-color: var(--primary-line); }
 button.tb.warn { color: var(--warn-fg); border-color: var(--question); }

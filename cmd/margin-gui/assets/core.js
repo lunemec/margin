@@ -23,7 +23,7 @@ export const state = {
   step: 0,
   nudged: false,
   more: false,
-  filter: 0,
+  filter: "All notes",
   showGhosts: true,
   split: false,
   showNotes: true,

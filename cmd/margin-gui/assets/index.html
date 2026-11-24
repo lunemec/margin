@@ -76,7 +76,14 @@
         <button id="agent-link" class="small hidden">Link saved conversation</button>
         <button id="agent-btn" class="primary small">Start agent</button>
       </header>
-      <div id="toolbar"></div>
+      <div id="toolbar">
+        <div id="reading-mode" role="group" aria-label="Reading mode">
+          <button type="button" data-full="false" aria-pressed="false" title="Follow the brief, background code, changes, and verdict in order (w)">Step by step</button>
+          <button type="button" data-full="true" aria-pressed="false" title="See this group of related changes together on one scrollable page (w)">Entire stop</button>
+        </div>
+        <select id="note-filter" aria-label="Note filter" title="Choose which agent notes to show (F)"></select>
+        <div id="toolbar-actions"></div>
+      </div>
       <div id="review-body">
         <nav id="stations"></nav>
         <article id="station"></article>
