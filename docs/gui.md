@@ -116,8 +116,8 @@ with pictures. In short:
   problem or giving a stop "needs changes" only marks it; **Ask to fix** (`P`) in the top bar or
   the recap hands them to the agent (a stop with your comments on it as the brief), and each comes
   back as a comment it resolves.
-- **Seeing more.** Choose **Added**, **Deleted**, or **All** changes (`d`) and read them **Inline**
-  or in **Split** columns (`s`). Search (`/`), folding (`z`), more context (`+` `-`) or the
+- **Seeing more.** Read the diff **Inline** or in **Split** columns (`s`). Search (`/`),
+  folding (`z`), more context (`+` `-`) or the
   whole file (`f`), callers and history around a
   stop, per-test coverage with the tests that run a line (`t`), a spotlight on one test, untested
   changes (`u`), the Tests stop, copying a note or a stop (`y` `Y`), and export for posting.

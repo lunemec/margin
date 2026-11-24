@@ -20,14 +20,12 @@ const cur = () => state.view?.stations[state.station];
 const guided = () => !reader().full;
 const fullDisplayLabel = () => state.view?.mode === "file" ? "Full file diff" : "Full group";
 const modeButtons = $$("#reading-mode button");
-const changeButtons = $$("#changes-mode button");
 const splitButtons = $$("#diff-layout button");
 const noteVisibilityButtons = $$("#notes-visibility button");
 const noteFilter = $("#note-filter");
 const toolbarOverflow = reviewToolbarOverflow($("#toolbar"));
 const search = $("#search");
 for (const button of modeButtons) button.onclick = () => setReadingMode(button.dataset.full === "true");
-for (const button of changeButtons) button.onclick = () => setChanges(button.dataset.changes);
 for (const button of splitButtons) button.onclick = () => setSplit(button.dataset.split === "true");
 for (const button of noteVisibilityButtons) button.onclick = () => setNoteVisibility(button.dataset.noteVisibility);
 noteFilter.onchange = () => setNoteFilter(noteFilter.value);
@@ -491,9 +489,6 @@ async function gotoTarget(arg) {
 function gotoNote(si, ni) {
   const s = state.view.stations[si];
   const note = s.notes[ni];
-  if (note.part >= 0 && note.line >= 0 && showDiffAnchor(s, note.part, note.line)) {
-    if (si === state.station) rerenderKeepScroll();
-  }
   if (si !== state.station) goStation(si);
   focusNote(ni);
   if (note.part >= 0 && note.line >= 0) selectRow(s.id, note.part, note.line, false);
@@ -577,9 +572,6 @@ async function gotoFileLine(file, line) {
           if (si !== state.station) goStation(si);
           const s = st[si];
           if (!(await loadPart(s, pi, state.expand[partKey(s, pi)] ?? 0, true))) return;
-        }
-        if (showDiffAnchor(st[si], pi, line - 1)) {
-          renderToolbar();
         }
         jump({ si, pi, line: line - 1 });
         return;
@@ -695,7 +687,6 @@ export function renderReview() {
 function renderToolbar() {
   for (const button of modeButtons) button.setAttribute("aria-pressed", button.dataset.full === String(!guided()));
   for (const group of $$("#toolbar .comparison-option")) group.classList.toggle("hidden", !state.view.hasBase);
-  for (const button of changeButtons) button.setAttribute("aria-pressed", String(button.dataset.changes === state.changes));
   for (const button of splitButtons) button.setAttribute("aria-pressed", String(button.dataset.split === String(state.split)));
   for (const button of noteVisibilityButtons) {
     button.setAttribute("aria-pressed", String(button.dataset.noteVisibility === noteVisibility()));
@@ -755,20 +746,6 @@ function renderToolbar() {
   btn("Export", "Your comments, flagged problems and calls, to post yourself", false, openExport, "export");
   btn("?", "All keys (H)", false, openHelp, "help").setAttribute("aria-label", "Help");
   toolbarOverflow.schedule();
-}
-
-function setChanges(mode) {
-  if (!state.view.hasBase || mode === state.changes || !allowReviewViewChange()) return;
-  state.changes = mode;
-  const s = cur();
-  const sel = state.sel;
-  state.block = null;
-  if (sel?.station === s.id && !lineVisible(s, sel.part, sel.line)) {
-    state.sel = null;
-  }
-  if (state.compose?.station === s.id && !lineVisible(s, state.compose.part, state.compose.line)) state.compose = null;
-  if (selectedNote() && !navigableNote(s, selectedNote())) state.note = -1;
-  rerenderKeepScroll();
 }
 
 function cycleToolbarChoice(buttons) {
@@ -975,26 +952,8 @@ function ghostRow(text, moved, hl, split, address) {
     <span class="src${split ? " left" : ""}">${body}</span>${split ? '<span class="src right"></span>' : ""}</div>`);
 }
 
-function diffRowVisible(row) {
-  if (!row?.n) return false;
-  switch (state.changes) {
-    case "added": return row.k !== "del";
-    case "deleted": return row.k !== "add" && row.k !== "chg";
-    default: return true;
-  }
-}
-
 function lineVisible(s, pi, line) {
-  return diffRowVisible(partData(s, pi)?.rows?.find((row) => row.n === line + 1));
-}
-
-function showDiffAnchor(s, part, first, last = first) {
-  if (state.changes === "all") return false;
-  const rows = partData(s, part)?.rows ?? [];
-  const hidesInterior = last > first && rows.some((row) => row.n > first + 1 && row.n < last + 1 && !diffRowVisible(row));
-  if (lineVisible(s, part, first) && lineVisible(s, part, last) && !hidesInterior) return false;
-  state.changes = "all";
-  return true;
+  return line >= 0 && partData(s, pi)?.rows?.some((row) => row.n === line + 1);
 }
 
 function navigableNote(s, note) {
@@ -1015,7 +974,7 @@ function codeRows(s, pi, from, to, opts = {}) {
   // In side by side, removed lines pair with the changed lines that replaced them.
   const pairedLeft = new Map();
   const pairedCounts = new Map();
-  if (split && state.changes === "all") {
+  if (split) {
     for (let k = 0; k < rows.length; k++) {
       const r = rows[k];
       for (let j = 0; j < (r.g ?? []).length; j++) {
@@ -1026,7 +985,6 @@ function codeRows(s, pi, from, to, opts = {}) {
       }
     }
   }
-  let showsChanges = false;
   for (let k = 0; k < rows.length; k++) {
     const r = rows[k];
     const line = r.n - 1;
@@ -1046,21 +1004,17 @@ function codeRows(s, pi, from, to, opts = {}) {
     const trb = state.trying;
     const inTry = trb && trb.station === s.id && trb.part === pi && r.n && line >= trb.line && line <= trb.end;
     if (inTry && line > trb.line) continue;
-    if (state.changes !== "added") {
-      const ghosts = r.g ?? [];
-      for (let j = pairedCounts.get(k) ?? 0; j < ghosts.length; j++) {
-        const g = ghosts[j];
-        const next = rows.slice(k).find((x) => x.k === "chg" && x.was === g);
-        code.append(ghostRow(g, r.gm?.[j], next ? hlOld(next) : null, split, `${pi}:${r.n}:${j}`));
-        showsChanges = true;
-      }
+    const ghosts = r.g ?? [];
+    for (let j = pairedCounts.get(k) ?? 0; j < ghosts.length; j++) {
+      const g = ghosts[j];
+      const next = rows.slice(k).find((x) => x.k === "chg" && x.was === g);
+      code.append(ghostRow(g, r.gm?.[j], next ? hlOld(next) : null, split, `${pi}:${r.n}:${j}`));
     }
-    if (!diffRowVisible(r)) continue;
+    if (!r.n) continue;
     if (inTry) {
       code.append(tryBox(s, p));
       continue;
     }
-    if (r.k) showsChanges = true;
     const allNotes = (r.notes ?? []).filter((i) => noteCardVisible(s, s.notes[i]));
     const notes = allNotes.filter((i) => !shown.has(i));
     const sel = state.sel && state.sel.station === s.id && state.sel.part === pi && state.sel.line === line;
@@ -1134,9 +1088,6 @@ function codeRows(s, pi, from, to, opts = {}) {
     const cp = state.compose;
     if (cp && cp.station === s.id && cp.part === pi && cp.line === line) code.append(composer(s, p));
   }
-  if (state.changes !== "all" && !showsChanges && (p.diffed || p.base || p.newFile) && !p.background) {
-    code.append(el(`<p class="muted small part-about">No ${state.changes} lines in this section.</p>`));
-  }
   return scroll;
 }
 
@@ -1168,7 +1119,7 @@ function partBox(s, pi, from, to, title, opts = {}) {
   const wholeShown = start === 0 && end >= p.len - 1 && !folded;
   const tryStart = opts.step ? from : s.parts[pi].start;
   const tryEnd = opts.step ? to : s.parts[pi].end;
-  const changes = p.base || p.err || state.changes === "deleted" ? [] : p.rows.filter((r) => r.n && r.n - 1 >= tryStart && r.n - 1 <= tryEnd && (r.k === "add" || r.k === "chg"));
+  const changes = p.base || p.err ? [] : p.rows.filter((r) => r.n && r.n - 1 >= tryStart && r.n - 1 <= tryEnd && (r.k === "add" || r.k === "chg"));
   const part = el(`<section class="part${p.background ? " bgpart" : ""}">
     <div class="part-head"><span class="file">${esc(title ?? p.file)}</span><span class="label">${title ? (p.baseFile ? "renamed from " + esc(p.baseFile) : "") : partTitle(s, pi, p)}</span>
     <span class="spacer"></span>
@@ -1809,7 +1760,6 @@ async function jumpDiscussion(review, id, reply, turnID) {
       const s = view.stations[i];
       const part = s.parts[q.part];
       const last = q.kind === "diff" ? questionLastLine(q) : q.at;
-      if (part) showDiffAnchor(s, q.part, q.at, last);
       const step = guided() && part ? stepOf(s, q.part, last) : 0;
       const before = step < 0 ? stepOf(s, q.part, part.start) : step;
       await goStation(i, -1, Math.max(0, before));
@@ -2189,9 +2139,6 @@ function openComposer(station, part, line, opts = {}) {
   const from = opts.from ?? line, end = opts.end ?? line;
   const anchor = questionSelection(p.viewVersion === state.view.version ? p : s.parts[part], from, end);
   if ((reselect || opts.mode === "ask") && !anchor) return toast("Wait for the selected code to reload, then choose Ask again.");
-  if (showDiffAnchor(s, part, from, end)) {
-    renderToolbar();
-  }
   state.sel = { station, part, line };
   const mode = reselect ? "ask" : opts.mode ?? (opts.answers ? "answer" : "comment");
   if (!keep || reselect) {
@@ -3610,7 +3557,7 @@ function untested() {
   state.view.stations.forEach((s, si) => {
     if (s.kind !== "code") return;
     s.parts.forEach((_, pi) => {
-      for (const r of partData(s, pi).rows) if (diffRowVisible(r) && r.cov === "missed") out.push({ si, pi, line: r.n - 1 });
+      for (const r of partData(s, pi).rows) if (r.n && r.cov === "missed") out.push({ si, pi, line: r.n - 1 });
     });
   });
   return out;
@@ -3619,7 +3566,7 @@ function untested() {
 function nextUntested(dir) {
   if (!state.view.coverage) return toast("No coverage yet: ask the agent to run margin coverage.");
   const hs = untested();
-  if (!hs.length) return toast(state.changes === "all" ? "A test runs every measured changed line." : "No visible untested lines.");
+  if (!hs.length) return toast("A test runs every measured changed line.");
   const [idx, wrapped] = pick(hs, dir);
   jump(hs[idx]);
   toast(`Untested line ${idx + 1} of ${hs.length}${wrapped}`);
@@ -3630,7 +3577,7 @@ function nextUntested(dir) {
 function findHit(test) {
   for (let si = 0; si < state.view.stations.length; si++) {
     const s = state.view.stations[si];
-    for (let pi = 0; pi < s.parts.length; pi++) for (const r of partData(s, pi).rows) if (diffRowVisible(r) && test(s, pi, r)) return { si, pi, line: r.n - 1 };
+    for (let pi = 0; pi < s.parts.length; pi++) for (const r of partData(s, pi).rows) if (r.n && test(s, pi, r)) return { si, pi, line: r.n - 1 };
   }
   return null;
 }
@@ -3646,12 +3593,10 @@ function hits() {
       const part = partData(s, pi);
       for (const r of part.rows) {
         const line = r.n ? r.n - 1 : Math.max(0, part.len - 1);
-        if (state.changes !== "added") {
-          (r.g ?? []).forEach((text, index) => {
-            if (matches(untab(text))) out.push({ si, pi, line, ghost: `${pi}:${r.n}:${index}`, order: r.n ? index - r.g.length : index + 1 });
-          });
-        }
-        if (diffRowVisible(r) && matches((r.s ?? []).map((x) => x.t).join(""))) out.push({ si, pi, line });
+        (r.g ?? []).forEach((text, index) => {
+          if (matches(untab(text))) out.push({ si, pi, line, ghost: `${pi}:${r.n}:${index}`, order: r.n ? index - r.g.length : index + 1 });
+        });
+        if (r.n && matches((r.s ?? []).map((x) => x.t).join(""))) out.push({ si, pi, line });
       }
     });
   });
@@ -3983,7 +3928,6 @@ function jumpToLine(station, file, line, base) {
   if (si < 0) return;
   const s = state.view.stations[si];
   const pi = s.parts.findIndex((p) => p.file === file && !!p.base === base && line - 1 >= p.start && line - 1 <= p.end);
-  if (pi >= 0) showDiffAnchor(s, pi, line - 1);
   goStation(si, -1, pi >= 0 && guided() ? Math.max(stepOf(s, pi, line - 1), 0) : 0);
   if (pi >= 0) {
     selectRow(s.id, pi, line - 1, false);
@@ -4257,7 +4201,7 @@ const helpKeys = [
   ["Move", [["} {", "next / previous stop"], ["] [", "next / previous note"], ["j k", "move the selected line"], ["J K shift+click", "select a block of lines"], ["ctrl+d ctrl+u", "half a page down / up"], ["g G", "top / bottom"], ["h l 0", "scroll code sideways / back"], ["N", "next new note (or previous match)"], ["L", "follow the note the selected note mentions (stop:n); again for the next one"], ["ctrl+o", "back to where you followed a mention from"]]],
   ["Judge", [["1 2 3", "verdict: looks good / needs changes / not sure"], ["space", "mark the selected note read in the full view"], ["?", "agree with the selected problem"], ["P", "ask the agent to fix the problems you agreed with and the stops that need changes"], ["x", "dismiss the selected note"], ["enter", "tick the selected call"], ["v", "reveal note cards on this stop"]]],
   ["Talk", [["c", "comment on the selected line (draft); Edit on its card rewords it"], ["S", "send all drafts to the agent"], ["A", "the agent's answers to your comments: read, edit, reply"], ["a", "ask the agent about the selected line"], ["y Y", "copy the note / the whole stop"], ["`", "focus the agent terminal; ctrl+esc leaves it"]]],
-  ["See", [["/", "search; n N next / previous"], ["F", "filter notes by kind or focus"], ["n", "cycle note visibility"], ["d", "cycle added, deleted, and all changes"], ["s", "switch between inline and split"], ["z", "fold unchanged code"], ["+ -", "more / less context on the selected part"], ["f", "whole file of the selected part"], ["t", "tests that run the selected line"], ["T", "run them (the stop's tests when no line is selected)"], ["i", "try a change to the selected line or block: edit or delete it, its tests run against that, then it is put back"], ["o", "show or hide the test output"], ["u U", "next / previous untested change"], ["esc", "end search or spotlight, close an overlay"], ["r", "reload"], ["\\", "show or hide the sidebar"], ["ctrl+k", "go to a repository, worktree, branch or review"], ["ctrl+,", "settings"]]],
+  ["See", [["/", "search; n N next / previous"], ["F", "filter notes by kind or focus"], ["n", "cycle note visibility"], ["s", "switch between inline and split"], ["z", "fold unchanged code"], ["+ -", "more / less context on the selected part"], ["f", "whole file of the selected part"], ["t", "tests that run the selected line"], ["T", "run them (the stop's tests when no line is selected)"], ["i", "try a change to the selected line or block: edit or delete it, its tests run against that, then it is put back"], ["o", "show or hide the test output"], ["u U", "next / previous untested change"], ["esc", "end search or spotlight, close an overlay"], ["r", "reload"], ["\\", "show or hide the sidebar"], ["ctrl+k", "go to a repository, worktree, branch or review"], ["ctrl+,", "settings"]]],
 ];
 
 function openHelp() {
@@ -4333,7 +4277,6 @@ export function reviewKey(e) {
     Enter: activate,
     v: reveal,
     F: cycleFilter,
-    d: () => cycleToolbarChoice(changeButtons),
     s: () => setSplit(!state.split),
     z: () => guided() ? toast(`Switch to ${fullDisplayLabel()} to fold unchanged code.`) : toggle("unfold"),
     "/": toolbarOverflow.focusSearch,
@@ -4464,7 +4407,7 @@ function captureReadingOrigin() {
     const key = partKey(s, i);
     return { file: p.file, base: !!p.base, from: p.start, extra: state.expand[key] ?? 0, whole: !!state.whole[key] };
   });
-  return { ...readingPosition(s), path: state.view.path, full: reader().full, changes: state.changes, positions,
+  return { ...readingPosition(s), path: state.view.path, full: reader().full, positions,
     sel: state.sel?.station === s.id ? { ...state.sel } : null,
     block: state.block?.station === s.id ? { ...state.block } : null,
     note: s.notes[state.note]?.key,
@@ -4479,7 +4422,6 @@ async function backToReading() {
     closeModal();
     hooks.showReviewer();
     activeThread = "";
-    state.changes = origin.changes;
     if (reader().full !== origin.full) await act("SetFull", origin.full);
     const s = state.view.stations.find((station) => station.id === origin.station);
     const matches = (i) => {
@@ -4580,7 +4522,7 @@ function viewHint() {
   if (guided() && s.kind !== "code") return `space next · w ${fullDisplayLabel()} · `;
   if (s.kind !== "code") return "";
   if (walking()) return `space next · b back · e more · w ${fullDisplayLabel()} · `;
-  return state.view.hasBase ? `d cycle changes · s ${state.split ? "inline" : "split"} · ` : "";
+  return state.view.hasBase ? `s ${state.split ? "inline" : "split"} · ` : "";
 }
 
 function cursorCoverage() {

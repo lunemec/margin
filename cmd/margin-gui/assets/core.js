@@ -24,7 +24,6 @@ export const state = {
   nudged: false,
   more: false,
   filter: "All notes",
-  changes: "all",
   split: false,
   unfold: false,
   expand: {},

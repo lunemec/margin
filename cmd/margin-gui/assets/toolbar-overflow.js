@@ -1,4 +1,4 @@
-const overflowOrder = ["export", "help", "github", "layout", "notes", "changes", "filter", "search", "tests", "display", "grouping"];
+const overflowOrder = ["export", "help", "github", "layout", "notes", "filter", "search", "tests", "display", "grouping"];
 
 export function reviewToolbarOverflow(toolbar) {
   const more = toolbar.querySelector("#toolbar-more");
