@@ -210,6 +210,77 @@ func TestLegacyPRWalkthroughRestoresItsPosition(t *testing.T) {
 	}
 }
 
+func TestLocalReviewWalkthrough(t *testing.T) {
+	path, _ := prWalkFixture(t)
+	for _, side := range []string{"base", "head"} {
+		file := filepath.Join(filepath.Dir(path), side, "limits.txt")
+		if err := os.WriteFile(file, []byte("request limit\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	setLocalTitle := func() {
+		if err := review.SetScalar(path, "title", "Uncommitted changes"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	setLocalTitle()
+	r := &Reviews{path: path}
+	view, err := r.Current()
+	if err != nil || view.Walkthrough == nil || view.Walkthrough.Mode != fileWalk || view.Walkthrough.Ready {
+		t.Fatalf("initial local review = %+v, %v", view, err)
+	}
+	const fileID = "file:retired.txt"
+	if _, err := r.AddComment(CommentInput{Station: fileID, Line: 0, Text: "Check the old route"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.SetFull(true); err != nil {
+		t.Fatal(err)
+	}
+	rv, err := review.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	preparation, err := beginWalkPreparation(rv)
+	if err != nil || preparation == "" {
+		t.Fatalf("begin local walkthrough = %q, %v", preparation, err)
+	}
+	writeWalkReview(t, path, prWalkGrouped+`      - file: limits.txt
+        lines: "1"
+        background: true
+    notes:
+      - at: request limit
+        file: limits.txt
+        kind: question
+        focus: performance
+        text: Do we need to compare both routes under load?
+`)
+	setLocalTitle()
+	if _, err := r.SelectWalkthrough(path, agentWalk); err == nil {
+		t.Fatal("selected local walkthrough before publication")
+	}
+	if err := markWalkthroughReady([]string{"--review", path, "--preparation", preparation}); err != nil {
+		t.Fatal(err)
+	}
+	view, err = r.Current()
+	if err != nil || view.Walkthrough.Mode != fileWalk || !view.Walkthrough.Ready || !view.Walkthrough.Offer {
+		t.Fatalf("ready local review = %+v, %v", view, err)
+	}
+	if got := view.Walkthrough.FocusAreas; !slices.Equal(got, []string{"performance"}) {
+		t.Fatalf("file view lost the guided-only focus area: %v", got)
+	}
+	view, err = r.SelectWalkthrough(path, agentWalk)
+	if err != nil || view.Walkthrough.Mode != agentWalk || !view.Reader.Full {
+		t.Fatalf("guided view did not preserve display choice: %+v, %v", view, err)
+	}
+	if c := view.Reader.Comments[0]; c.Station != "shipping" || c.At != 0 {
+		t.Fatalf("local comment did not follow its anchor: %+v", c)
+	}
+	view, err = r.SelectWalkthrough(path, fileWalk)
+	if err != nil || view.Reader.Comments[0].Station != fileID || !view.Reader.Full {
+		t.Fatalf("local feedback or display choice was lost on return: %+v, %v", view, err)
+	}
+}
+
 func TestContinueWalkthroughWaitsForReader(t *testing.T) {
 	prompt := kickoff("/tmp/example.review.yaml", false, true, "", "pending-checkpoint")
 	if !strings.Contains(prompt, "--continue") || !strings.Contains(prompt, "Wait for the reader") ||

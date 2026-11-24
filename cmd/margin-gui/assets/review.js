@@ -17,6 +17,7 @@ const reader = () =>
   state.view?.reader ?? { verdicts: {}, comments: [], questions: [], reviewed: [], flagged: [], dismissed: [], revealed: [], visited: [], labels: [], seen: {} };
 const cur = () => state.view?.stations[state.station];
 const guided = () => !reader().full;
+const fullDisplayLabel = () => state.view?.mode === "file" ? "Full file diff" : "Full group";
 const modeButtons = $$("#reading-mode button");
 const noteFilter = $("#note-filter");
 for (const button of modeButtons) button.onclick = () => setReadingMode(button.dataset.full === "true");
@@ -93,11 +94,7 @@ async function loadReview(dir, arg, fresh, file, restore, browsing) {
     await api("Reviews.ReadingPosition", opened.path).catch(() => null);
   if (!same && !await restoreReadingPosition(position)) {
     if (state.view.mode === "file") {
-      const first = state.view.stations.findIndex((s) => s.kind === "code");
-      if (first >= 0) {
-        const step = guided() ? state.view.stations[first].steps?.findIndex((s) => s.kind === "change" || s.kind === "mech") : 0;
-        await goStation(first, -1, Math.max(0, step ?? 0));
-      }
+      await goToFirstFile();
     } else if ((!guided() || reader().visited.length) && state.view.stations.length > 1) {
       goStation(1);
     }
@@ -222,34 +219,30 @@ export function renderWalkthrough() {
   $("#walkthrough").classList.toggle("hidden", !walk);
   if (!walk) return;
   const preparing = !walk.ready && (opened.launchingWalkthrough || (opened.walkAgentLive && opened.agent?.walkPreparing));
-  const label = walk.offer ? "Agent walkthrough is ready" :
-    walk.ready ? "Walkthrough" :
-    preparing ? "File by file · Preparing agent walkthrough…" :
-    opened.walkFailure ? "File by file · Could not start the agent walkthrough" :
-    opened.walkAgentLive ? "File by file · Agent connected" :
-    opened.agent?.walkAttempted ? "File by file · Agent stopped before the walkthrough was ready" : "File by file · Agent not started";
+  const label = walk.ready ? (walk.offer ? "Guided walk is ready" : "") :
+    preparing ? "The agent is preparing the guided walk" :
+    opened.walkFailure ? "Could not start the guided walk. Retry from the agent controls" :
+    opened.walkAgentLive ? "The guided walk is waiting for the agent to finish grouping changes" :
+    opened.agent?.walkAttempted ? "The agent stopped before the guided walk was ready" : "Start the agent to prepare the guided walk";
   const status = $("#walkthrough-status");
   if (status.textContent !== label) status.textContent = label;
   $("#walkthrough-progress").classList.toggle("hidden", !preparing);
-  for (const [mode, name, offer] of [
-    ["file", "File by file", "Keep reviewing by file"],
-    ["agent", "Agent walkthrough", "Open agent walkthrough"],
-  ]) {
+  for (const mode of ["file", "agent"]) {
     const button = $("#walkthrough-" + mode);
-    const text = walk.offer ? offer : name;
-    if (button.textContent !== text) button.textContent = text;
-    button.classList.toggle("hidden", !walk.ready);
-    button.setAttribute("aria-pressed", String(walk.mode === mode && !walk.offer));
-    button.disabled = !!opened.switchingWalkthrough;
+    button.setAttribute("aria-pressed", String(walk.mode === mode));
+    button.setAttribute("aria-disabled", String(!!opened.switchingWalkthrough || (mode === "agent" && !walk.ready)));
   }
+  $("#walkthrough-agent").title = walk.ready ? "Follow the agent’s groups of related changes across files" : label;
 }
 
-async function selectWalkthrough(mode) {
+async function selectWalkthrough(mode, button) {
   const opened = state.opened;
   const walk = state.view?.walkthrough;
-  const changing = mode !== walk?.mode;
-  if (!walk?.ready || (!changing && !walk.offer) || opened.switchingWalkthrough ||
-      (changing && !beginDiscussionAction())) return;
+  if (!walk || !opened || opened.restoringPosition || opened.switchingWalkthrough || changingMode === opened) return;
+  if (mode === "agent" && !walk.ready) return;
+  const changing = mode !== walk.mode;
+  if ((!changing && !walk.offer) || (changing && !beginDiscussionAction())) return;
+  const restoreFocus = document.activeElement === button;
   opened.switchingWalkthrough = true;
   if (changing) {
     $("#review-body").inert = true;
@@ -275,7 +268,10 @@ async function selectWalkthrough(mode) {
     }
     applyView(view, changing);
     if (changing) {
-      if (!await restoreReadingPosition(view.walkthrough.position)) await goStation(0);
+      if (!await restoreReadingPosition(view.walkthrough.position)) {
+        if (mode === "file") await goToFirstFile();
+        else await goStation(0);
+      }
       loadThreads(opened);
     }
   } catch (e) {
@@ -292,6 +288,7 @@ async function selectWalkthrough(mode) {
     if (state.opened === opened) {
       if (changing) queueReadingPosition(0, true);
       renderWalkthrough();
+      if (restoreFocus && document.activeElement === document.body) button.focus({ preventScroll: true });
       if (opened.reloadAfterSwitch) {
         opened.reloadAfterSwitch = false;
         reload();
@@ -300,8 +297,8 @@ async function selectWalkthrough(mode) {
   }
 }
 
-$("#walkthrough-file").onclick = () => selectWalkthrough("file");
-$("#walkthrough-agent").onclick = () => selectWalkthrough("agent");
+$("#walkthrough-file").onclick = (e) => selectWalkthrough("file", e.currentTarget);
+$("#walkthrough-agent").onclick = (e) => selectWalkthrough("agent", e.currentTarget);
 
 // trackFresh marks notes that appeared since the last load, so notes the agent adds elsewhere are not missed.
 function trackFresh(view) {
@@ -550,9 +547,12 @@ const filterDescriptions = {
 };
 
 function filters() {
-  const areas = new Set();
-  for (const s of state.view?.stations ?? []) for (const n of s.notes) if (n.focus) areas.add("Focus: " + n.focus);
-  return Object.keys(filterDescriptions).concat([...areas].sort());
+  const walk = state.view?.walkthrough;
+  const areas = new Set(walk?.focusAreas ?? []);
+  if (!walk) {
+    for (const s of state.view?.stations ?? []) for (const n of s.notes) if (n.focus) areas.add(n.focus);
+  }
+  return Object.keys(filterDescriptions).concat([...areas].sort().map((area) => "Focus: " + area));
 }
 
 const asks = (n) => ["issue", "question", "decide"].includes(n.kind);
@@ -622,6 +622,10 @@ export function renderReview() {
 
 function renderToolbar() {
   for (const button of modeButtons) button.setAttribute("aria-pressed", button.dataset.full === String(!guided()));
+  const fullButton = $("#reading-full");
+  fullButton.textContent = fullDisplayLabel();
+  fullButton.title = state.view.mode === "file" ? "See all changed sections of this file on one page (w)" :
+    "See all changes in the current group on one page (w)";
   const choices = filters();
   if (choices.length !== noteFilter.length || choices.some((label, i) => label !== noteFilter.options[i].value)) {
     noteFilter.replaceChildren(...choices.map((label) => {
@@ -2317,7 +2321,7 @@ let changingMode;
 
 async function setReadingMode(full) {
   const opened = state.opened;
-  if (!state.view || !opened || opened.restoringPosition || full === !guided() || changingMode === opened) return;
+  if (!state.view || !opened || opened.restoringPosition || opened.switchingWalkthrough || full === !guided() || changingMode === opened) return;
   changingMode = opened;
   const ok = await act("SetFull", full);
   if (changingMode === opened) changingMode = undefined;
@@ -2331,7 +2335,7 @@ async function setReadingMode(full) {
     if (!full) renderKeepScroll();
   }
   if (sel) rowAt(sel.part, sel.line)?.scrollIntoView({ block: "center" });
-  toast(full ? "Entire stop · w switches to step by step" : "Step by step · space next · b back · w entire stop");
+  toast(full ? `${fullDisplayLabel()} · w switches to step by step` : `Step by step · space next · b back · w ${fullDisplayLabel()}`);
 }
 
 function progress(s) {
@@ -4062,9 +4066,9 @@ async function openExport() {
 }
 
 const helpKeys = [
-  ["Walk", [["space", "next step; at the end of a stop, the next stop"], ["b", "previous step"], ["w", "step by step or entire stop"], ["e", "more of the stop card or overview; on a draft comment, edit it"], ["y n ?", "answer the orient question (overview)"]]],
+  ["Walk", [["space", "next step; at the end of a stop, the next stop"], ["b", "previous step"], ["w", "switch between step by step and the full view"], ["e", "more of the stop card or overview; on a draft comment, edit it"], ["y n ?", "answer the orient question (overview)"]]],
   ["Move", [["} {", "next / previous stop"], ["] [", "next / previous note"], ["j k", "move the selected line"], ["J K shift+click", "select a block of lines"], ["ctrl+d ctrl+u", "half a page down / up"], ["g G", "top / bottom"], ["h l 0", "scroll code sideways / back"], ["N", "next new note (or previous match)"], ["L", "follow the note the selected note mentions (stop:n); again for the next one"], ["ctrl+o", "back to where you followed a mention from"]]],
-  ["Judge", [["1 2 3", "verdict: looks good / needs changes / not sure"], ["space", "mark the selected note read (entire stop)"], ["?", "agree with the selected problem"], ["P", "ask the agent to fix the problems you agreed with and the stops that need changes"], ["x", "dismiss the selected note"], ["enter", "tick the selected call"], ["v", "reveal notes in blind mode"]]],
+  ["Judge", [["1 2 3", "verdict: looks good / needs changes / not sure"], ["space", "mark the selected note read in the full view"], ["?", "agree with the selected problem"], ["P", "ask the agent to fix the problems you agreed with and the stops that need changes"], ["x", "dismiss the selected note"], ["enter", "tick the selected call"], ["v", "reveal notes in blind mode"]]],
   ["Talk", [["c", "comment on the selected line (draft); Edit on its card rewords it"], ["S", "send all drafts to the agent"], ["A", "the agent's answers to your comments: read, edit, reply"], ["a", "ask the agent about the selected line"], ["y Y", "copy the note / the whole stop"], ["`", "focus the agent terminal; ctrl+esc leaves it"]]],
   ["See", [["/", "search; n N next / previous"], ["F", "filter notes"], ["n", "show or hide notes"], ["d", "removed lines"], ["s", "side by side"], ["z", "fold unchanged code"], ["+ -", "more / less context on the selected part"], ["f", "whole file of the selected part"], ["t", "tests that run the selected line"], ["T", "run them (the stop's tests when no line is selected)"], ["i", "try a change to the selected line or block: edit or delete it, its tests run against that, then it is put back"], ["o", "show or hide the test output"], ["u U", "next / previous untested change"], ["esc", "end search or spotlight, close an overlay"], ["r", "reload"], ["\\", "show or hide the sidebar"], ["ctrl+k", "go to a repository, worktree, branch or review"], ["ctrl+,", "settings"]]],
 ];
@@ -4150,7 +4154,7 @@ export function reviewKey(e) {
     F: cycleFilter,
     d: () => toggle("showGhosts"),
     s: () => toggle("split"),
-    z: () => guided() ? toast("Switch to Entire stop to fold unchanged code.") : toggle("unfold"),
+    z: () => guided() ? toast(`Switch to ${fullDisplayLabel()} to fold unchanged code.`) : toggle("unfold"),
     "/": () => document.querySelector("#search")?.focus(),
     Escape: () => {
       if (state.query) return endSearch();
@@ -4230,6 +4234,13 @@ function indexOfReadingStep(station, saved) {
   });
   const exact = match(true);
   return exact >= 0 ? exact : match(false);
+}
+
+function goToFirstFile() {
+  const first = state.view.stations.findIndex((s) => s.kind === "code");
+  if (first < 0) return goStation(0);
+  const step = guided() ? state.view.stations[first].steps?.findIndex((s) => s.kind === "change" || s.kind === "mech") : 0;
+  return goStation(first, -1, Math.max(0, step ?? 0));
 }
 
 async function restoreReadingPosition(position) {
@@ -4384,9 +4395,9 @@ function pace() {
 function viewHint() {
   const s = cur();
   if (guided() && s.kind === "overview") return "y n ? answer · e more · ";
-  if (guided() && s.kind !== "code") return "space next · w entire stop · ";
+  if (guided() && s.kind !== "code") return `space next · w ${fullDisplayLabel()} · `;
   if (s.kind !== "code") return "";
-  if (walking()) return "space next · b back · e more · w entire stop · ";
+  if (walking()) return `space next · b back · e more · w ${fullDisplayLabel()} · `;
   if (state.split) return "s one column · ";
   return state.showGhosts ? "d hide removed · s side by side · " : "d show removed · s side by side · ";
 }

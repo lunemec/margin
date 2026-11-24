@@ -76,18 +76,26 @@
         <button id="agent-link" class="small hidden">Link saved conversation</button>
         <button id="agent-btn" class="primary small">Start agent</button>
       </header>
-      <div id="walkthrough" class="hidden">
-        <span id="walkthrough-status" role="status"></span>
-        <progress id="walkthrough-progress" class="hidden" aria-label="Preparing agent walkthrough"></progress>
-        <button id="walkthrough-file" class="small hidden" type="button">File by file</button>
-        <button id="walkthrough-agent" class="small hidden" type="button">Agent walkthrough</button>
-      </div>
       <div id="toolbar">
-        <div id="reading-mode" role="group" aria-label="Reading mode">
-          <button type="button" data-full="false" aria-pressed="false" title="Follow the brief, background code, changes, and verdict in order (w)">Step by step</button>
-          <button type="button" data-full="true" aria-pressed="false" title="See this group of related changes together on one scrollable page (w)">Entire stop</button>
+        <div id="walkthrough" class="toolbar-field hidden">
+          <span id="walkthrough-label" class="toolbar-label">Group changes by</span>
+          <div class="segments" role="group" aria-labelledby="walkthrough-label">
+            <button id="walkthrough-file" type="button" aria-pressed="false" title="Browse the diff one changed file at a time">File by file</button>
+            <button id="walkthrough-agent" type="button" aria-pressed="false" aria-describedby="walkthrough-status"><span id="walkthrough-progress" class="walkthrough-spinner hidden" aria-hidden="true"></span>Guided walk</button>
+          </div>
+          <span id="walkthrough-status" role="status"></span>
         </div>
-        <select id="note-filter" aria-label="Note filter" title="Choose which agent notes to show (F)"></select>
+        <div class="toolbar-field">
+          <span id="display-label" class="toolbar-label">Display</span>
+          <div id="reading-mode" class="segments" role="group" aria-labelledby="display-label">
+            <button type="button" data-full="false" aria-pressed="false" title="Read one part of the current file or group at a time (w)">Step by step</button>
+            <button id="reading-full" type="button" data-full="true" aria-pressed="false">Full group</button>
+          </div>
+        </div>
+        <label class="toolbar-field note-filter-field">
+          <span class="toolbar-label">Notes</span>
+          <select id="note-filter" title="Choose which agent notes to show (F)"></select>
+        </label>
         <div id="toolbar-actions"></div>
       </div>
       <div id="review-body">

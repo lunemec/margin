@@ -365,9 +365,16 @@ func (r *Reviews) loadCurrent(expectedPath string, requested walkMode) (*View, e
 				return nil, err
 			}
 		}
+		authored := d
+		if walk.mode == fileWalk {
+			authored = walk.alternate
+		}
 		v.Walkthrough = &WalkthroughView{
-			Mode: walk.mode, Ready: walk.ready, Offer: walk.ready && walk.mode == fileWalk && !saved.WalkChoice && requested == "",
-			Position: saved.positionFor(walk),
+			Mode:       walk.mode,
+			Ready:      walk.ready,
+			Offer:      walk.ready && walk.mode == fileWalk && !saved.WalkChoice && requested == "",
+			Position:   saved.positionFor(walk),
+			FocusAreas: walkthroughFocusAreas(authored),
 		}
 	}
 	r.watch(paths)

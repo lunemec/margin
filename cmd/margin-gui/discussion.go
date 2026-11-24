@@ -31,7 +31,7 @@ func locateDiscussionLine(d *doc.Doc, q state.Question) DiscussionLocation {
 func locateDiscussionCode(d *doc.Doc, station, file, side string, find func([]string) int) DiscussionLocation {
 	lost := DiscussionLocation{Part: -1, At: -1}
 	_, original := d.Station(station)
-	if original == nil && (d.Review == nil || !isPRWalk(d.Review)) {
+	if original == nil && !d.HasBase {
 		return lost
 	}
 	partMatches := func(p *doc.Part) bool {
@@ -67,7 +67,7 @@ func locateDiscussionCode(d *doc.Doc, station, file, side string, find func([]st
 			}
 		}
 	}
-	if d.Review != nil && isPRWalk(d.Review) {
+	if d.HasBase {
 		for _, s := range d.Stations {
 			for i, p := range s.Parts {
 				if partMatches(p) && p.Range.Start <= at && at <= p.Range.End {

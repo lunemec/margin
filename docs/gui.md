@@ -96,11 +96,11 @@ with pictures. In short:
   route through the stops with their risk and size, and asks whether the change makes sense done
   this way (`y`, `n`, `?`). A stop groups related changes. **Step by step** takes you through the
   brief, background code, changes with notes, and verdict (`1` good, `2` needs changes, `3` not sure).
-  **Entire stop** shows that group of changes on one page. Switch views with `w`.
+  **Full group** shows that group of changes on one page. Switch display with `w`.
 - **Note filter.** **All notes** includes every kind of agent note. **Issues, questions & decisions**
   includes reported issues, questions, and decisions for you to make. **Issues with evidence**
   includes only issues that cite evidence. Choose a focus area to see notes tagged with that topic.
-  The filter works in either reading view. Press `F` to cycle through the filters.
+  The filter stays selected when you switch grouping or display. Press `F` to cycle through the filters.
 - **Your side.** Comment on a line with `c` (pick a kind: issue, suggestion, question, nitpick,
   praise, thought; `!` makes it blocking). Comments are drafts until `S` sends them all to the
   agent; until then *Edit* on a draft (or `e`) rewords it. Ask the agent about a line with `a`. Mark notes read, agree with a problem (`?`), dismiss
@@ -146,16 +146,16 @@ A note that mentions another as `stop:n` (`resolve:2`: the second note of stop *
 `margin goto` takes) shows it as a link: click it, or press `L` on the selected note, to jump there,
 and `ctrl+o` to come back. The note it points at lists it under *Referenced by*.
 
-## Walkthrough views for pull requests
+## Grouping changes
 
-A new pull request opens **File by file** so you can start reviewing immediately. When you start
-the agent, a progress bar stays visible while it groups the changes. Once the grouping is ready,
-choose **Keep reviewing by file** or **Open agent walkthrough**. The agent can keep adding notes
-and coverage after you choose.
+**Group changes by** is available for pull requests and local reviews with a comparison base.
+**File by file** opens immediately so you can review each changed file. **Guided walk** shows
+groups of related changes that the agent has put together. Its button shows a spinner while the
+agent prepares those groups. You can switch to it when it is ready.
 
-You can switch views anytime and Margin remembers your reading position in each. Agent notes with
-a matching line appear in both walkthroughs. **Step by step** and **Entire stop** control how you
-read the stops in either walkthrough.
+Margin remembers your reading position in each grouping. Agent notes with a matching line appear
+in both. The **Display** switch lets you read **Step by step** or see the **Full file diff** or
+**Full group** on one page. Your display choice carries across groupings.
 
 ## The agent
 

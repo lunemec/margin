@@ -8,7 +8,6 @@ import (
 	"io"
 	"path/filepath"
 	"slices"
-	"strings"
 
 	"github.com/redrick/margin/internal/anchor"
 	"github.com/redrick/margin/internal/doc"
@@ -27,10 +26,11 @@ const (
 )
 
 type WalkthroughView struct {
-	Mode     walkMode         `json:"mode"`
-	Ready    bool             `json:"ready"`
-	Offer    bool             `json:"offer"`
-	Position *ReadingPosition `json:"position,omitempty"`
+	Mode       walkMode         `json:"mode"`
+	Ready      bool             `json:"ready"`
+	Offer      bool             `json:"offer"`
+	Position   *ReadingPosition `json:"position,omitempty"`
+	FocusAreas []string         `json:"focusAreas"`
 }
 
 type walkthrough struct {
@@ -39,16 +39,6 @@ type walkthrough struct {
 	legacyIDs map[string]string
 	alternate *doc.Doc
 	noteRefs  map[string]string
-}
-
-func isPRWalk(rv *review.Review) bool {
-	// This is the title written by target.pullRequest and recognized by GitHub review lookup.
-	tail, ok := strings.CutPrefix(rv.Title, "PR #")
-	if !ok {
-		return false
-	}
-	number, _, ok := strings.Cut(tail, ":")
-	return ok && number != "" && strings.Trim(number, "0123456789") == ""
 }
 
 func fileStations(files *source.Files) ([]review.Station, error) {
@@ -89,7 +79,7 @@ func hasAuthoredWalk(rv *review.Review, generated []review.Station) bool {
 }
 
 func beginWalkPreparation(rv *review.Review) (string, error) {
-	if !isPRWalk(rv) {
+	if rv.Base == "" && rv.BaseDir == "" {
 		return "", nil
 	}
 	saved := readReviewResume(rv.Path)
@@ -102,9 +92,6 @@ func beginWalkPreparation(rv *review.Review) (string, error) {
 			return "", err
 		}
 		defer files.Close()
-		if !files.HasBase() {
-			return "", nil
-		}
 		generated, err := fileStations(files)
 		if err != nil {
 			return "", err
@@ -144,14 +131,14 @@ func markWalkthroughReady(args []string) error {
 	if err != nil {
 		return err
 	}
-	if !isPRWalk(rv) {
-		return errors.New("open this pull request in Margin GUI first")
-	}
 	files, err := source.Open(rv)
 	if err != nil {
 		return err
 	}
 	defer files.Close()
+	if !files.HasBase() {
+		return errors.New("a comparison base is required to publish a walkthrough")
+	}
 	generated, err := fileStations(files)
 	if err != nil {
 		return err
@@ -178,9 +165,9 @@ func markWalkthroughReady(args []string) error {
 }
 
 func buildWalkthrough(rv *review.Review, files *source.Files, saved reviewResume, current, requested walkMode) (*doc.Doc, walkthrough, error) {
-	if !isPRWalk(rv) || !files.HasBase() {
+	if !files.HasBase() {
 		if requested != "" {
-			return nil, walkthrough{}, errors.New("walkthrough views are available for pull request reviews")
+			return nil, walkthrough{}, errors.New("walkthrough views require a comparison base")
 		}
 		return doc.Build(rv, files), walkthrough{}, nil
 	}
@@ -225,6 +212,20 @@ func buildWalkthrough(rv *review.Review, files *source.Files, saved reviewResume
 	walk.alternate = agent
 	walk.noteRefs = projectWalkNotes(d, agent)
 	return d, walk, nil
+}
+
+// Use the authored notes so a focus filter survives switching away from notes without file anchors.
+func walkthroughFocusAreas(d *doc.Doc) []string {
+	areas := []string{}
+	for _, stop := range d.Stations {
+		for _, note := range stop.Notes {
+			if note.Focus != "" {
+				areas = append(areas, note.Focus)
+			}
+		}
+	}
+	slices.Sort(areas)
+	return slices.Compact(areas)
 }
 
 func projectWalkNotes(files, authored *doc.Doc) map[string]string {
