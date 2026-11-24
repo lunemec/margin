@@ -4212,6 +4212,8 @@ export function moveCursor(dir, jumpTo, extend) {
   let next = jumpTo === "first" ? 0 : jumpTo === "last" ? items.length - 1 : at < 0 ? (dir > 0 ? 0 : items.length - 1) : Math.max(0, Math.min(items.length - 1, at + dir));
   items.forEach((x) => x.classList.remove("kcur"));
   const it = items[next];
+  const focused = document.activeElement;
+  if (focused?.matches("#station .review-disclosure > summary") && !it.contains(focused)) focused.blur();
   if (it.dataset.line !== undefined) {
     selectRow(cur().id, +it.dataset.part, +it.dataset.line, false, extend);
   } else {
