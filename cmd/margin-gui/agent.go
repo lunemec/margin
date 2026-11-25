@@ -317,24 +317,20 @@ func (a *Agents) session(reviewPath string) *session {
 }
 
 func (a *Agents) pump(reviewPath string, s *session) {
-	buf := make([]byte, 32<<10)
-	for {
-		n, err := s.pty.Read(buf)
-		if n > 0 {
-			s.mu.Lock()
-			s.buf = append(s.buf, buf[:n]...)
-			if over := len(s.buf) - scrollback; over > 0 {
-				s.buf = s.buf[over:]
-			}
-			s.mu.Unlock()
-			if a.app != nil {
-				a.app.Event.Emit("agent:data", AgentData{Review: reviewPath, Data: base64.StdEncoding.EncodeToString(buf[:n])})
-			}
+	// Output goes to the window in batches, not one event per read: every event is run on the UI
+	// thread, and an agent redrawing its screen can read faster than a busy machine runs them,
+	// which leaves the window no time to handle input.
+	coalesce(s.pty, agentFrame, agentPending, func(chunk []byte) {
+		s.mu.Lock()
+		s.buf = append(s.buf, chunk...)
+		if over := len(s.buf) - scrollback; over > 0 {
+			s.buf = s.buf[over:]
 		}
-		if err != nil {
-			break
+		s.mu.Unlock()
+		if a.app != nil {
+			a.app.Event.Emit("agent:data", AgentData{Review: reviewPath, Data: base64.StdEncoding.EncodeToString(chunk)})
 		}
-	}
+	})
 	waitErr := s.cmd.Wait()
 	_ = s.pty.Close()
 	a.mu.Lock()
