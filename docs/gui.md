@@ -77,7 +77,9 @@ selector to switch checkouts, or pick another repository in the sidebar. The pic
   it is checked out in, and whether a review of it is in progress. Tick *remote branches* to see
   those too.
 - **Commits** on the current branch.
-- **Uncommitted changes**, **Staged changes**, **This branch**, and existing reviews below the tabs.
+- **Uncommitted changes**, **Staged changes**, and **This branch** appear above the tabs when the
+  selected worktree has local changes. For a clean worktree, the review cards appear below the tabs.
+  Existing reviews appear below the picker.
 
 Press **ctrl+k** anywhere to **go to** anything by typing a few letters of it: a review, a
 repository or worktree, a branch of the worktree you are in, a pull request, or a command

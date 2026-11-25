@@ -227,7 +227,7 @@ export function renderHome(keepFilter = $("#wt-body .pick-filter")?.value ?? "")
   const baseName = (t.base ?? "").replace(/^origin\//, "");
   if (t.branch && t.branch !== baseName) {
     const ab = curBranch && t.base ? `${curBranch.ahead} ahead, ${curBranch.behind} behind ${esc(t.base)}` : `against ${esc(t.base || "the main branch")}`;
-    card(`This branch · ${t.branch}`, ab, curBranch?.review, curBranch && t.base && !curBranch.ahead, () => openReview(dir, t.branch));
+    card(`This branch · ${t.branch}`, ab, curBranch?.review, curBranch && t.base && !curBranch.ahead && !t.dirty, () => openReview(dir, t.branch));
   }
   body.append(cards);
 
@@ -266,7 +266,8 @@ export function renderHome(keepFilter = $("#wt-body .pick-filter")?.value ?? "")
       if (e.key !== "Escape") moveHome(1, true);
     }
   };
-  body.prepend(pick);
+  if (t.dirty) cards.after(pick);
+  else body.prepend(pick);
   renderList(pick.querySelector(".pick-list"), keepFilter.toLowerCase());
   if (hadFocus) filter.focus();
   markCursor();

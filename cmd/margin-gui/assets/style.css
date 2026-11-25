@@ -267,7 +267,7 @@ button.forget { visibility: hidden; font-size: 11px; padding: 0 4px; }
 .wt-card .c-foot { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
 .pill-rv { font-size: 11px; color: var(--accent); background: var(--sel-bg); border-radius: 9px; padding: 0 7px; white-space: nowrap; }
 .wt-sec { margin-top: 22px; }
-.wt-sec.review-picker { margin-top: 0; }
+.wt-cards:first-child, .wt-sec.review-picker:first-child { margin-top: 0; }
 .wt-sec h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--fg-faint); margin: 0 0 6px; font-weight: 500; }
 .tabs-row { display: flex; align-items: center; gap: 12px; }
 .tabs-row .tabs { padding: 0; }
